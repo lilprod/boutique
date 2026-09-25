@@ -50,10 +50,11 @@ class VarianteController extends Controller
     public function mouvements(Request $request)
     {
         // Ni variante ni produit embarqués (photo comprise) : le frontend les a déjà via /produits.
+        $filtres = $request->validate(['type' => 'nullable|in:entree,vente,annulation,ajustement', 'variante_id' => 'nullable|integer']);
         $q = \App\Models\Mouvement::with('utilisateur:id,nom')->latest()->latest('id');
-        if ($request->filled('type')) $q->where('type', $request->string('type'));
-        if ($request->filled('variante_id')) $q->where('variante_id', $request->integer('variante_id'));
-        $page = $q->paginate(max(1, min(200, $request->integer('per_page', 200))));
+        if (!empty($filtres['type'])) $q->where('type', $filtres['type']);
+        if (!empty($filtres['variante_id'])) $q->where('variante_id', $filtres['variante_id']);
+        $page = $q->paginate(max(1, min(200, $request->integer('per_page', 100))));
         if (!$request->user()->estAdmin()) {
             $page->getCollection()->each->makeHidden('prix_achat_pagne');
         }

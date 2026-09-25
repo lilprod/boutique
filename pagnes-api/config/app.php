@@ -65,7 +65,7 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'), // Africa/Lome (UTC+0, sans changement d'heure) : les « jours » du tableau de bord
 
     /*
     |--------------------------------------------------------------------------

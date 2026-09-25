@@ -5,7 +5,7 @@ import { useApp } from '../store';
 import { t } from '../i18n';
 import { Empty, useUI } from '../components/ui';
 import { ClientForm } from '../components/ClientForm';
-import { fcfa, fmtDate, norm, sum } from '../lib/format';
+import { fcfa, fmtDate, norm } from '../lib/format';
 
 export default function Clients() {
   const { db, user, deleteClient } = useApp();
@@ -16,10 +16,9 @@ export default function Clients() {
 
   const rows = useMemo(() => db.clients
     .filter(c => !q || norm([c.nom, c.telephone, c.adresse].join(' ')).includes(norm(q)))
-    .map(c => {
-      const vs = db.ventes.filter(v => v.clientId === c.id && v.statut === 'validee');
-      return { c, n: vs.length, total: sum(vs.map(v => v.total)), last: vs.map(v => v.date).sort().pop() };
-    }).sort((a, b) => a.c.nom.localeCompare(b.c.nom, 'fr')), [db.clients, db.ventes, q]);
+    // Nombre d'achats, montant dépensé et dernier achat : calculés par l'API sur les ventes validées.
+    .map(c => ({ c, n: c.achats ?? 0, total: c.depense ?? 0, last: c.derniereVente }))
+    .sort((a, b) => a.c.nom.localeCompare(b.c.nom, 'fr')), [db.clients, q]);
 
   const remove = async (c: Client) => {
     if (!(await confirm({ title: t('clients.supprimerTitre'), message: t('clients.supprimerMsg', { nom: c.nom }), confirmLabel: t('common.supprimer'), danger: true }))) return;

@@ -7,8 +7,8 @@ import { t, uniteLabel } from '../i18n';
 export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' }) {
   const { db } = useApp();
   const p = db.parametres;
-  const vendeur = db.users.find(u => u.id === vente.vendeurId);
-  const client = db.clients.find(c => c.id === vente.clientId);
+  const vendeur = vente.vendeurNom ?? db.users.find(u => u.id === vente.vendeurId)?.nom;
+  const client = vente.clientNom ?? db.clients.find(c => c.id === vente.clientId)?.nom;
   const rendu = vente.paiement.recu ? vente.paiement.recu - vente.total : 0;
   return (
     <div className={'ticket ' + (format === 'A4' ? 'a4' : 'w80')}>
@@ -20,8 +20,8 @@ export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' 
       <div className="t-meta">
         <div><strong>{t('ticket.numero', { n: numeroVente(vente.numero) })}</strong></div>
         <div>{fmtDateTime(vente.date)}</div>
-        <div>{t('ticket.vendeur')} : {vendeur?.nom ?? '—'}</div>
-        {client && <div>{t('ticket.client')} : {client.nom}</div>}
+        <div>{t('ticket.vendeur')} : {vendeur ?? '—'}</div>
+        {client && <div>{t('ticket.client')} : {client}</div>}
       </div>
       {vente.statut === 'annulee' && <div className="t-stamp">{t('ticket.annule')}</div>}
       <div className="t-lines">

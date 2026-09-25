@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { CartLine, Client, DB, ModePaiement, Mouvement, Parametres, Produit, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { ApiError, del, get, getAll, post, put, setUnauthorizedHandler, token } from './api';
-import { fromClient, fromParametres, fromProduit, fromUser, fromVente, toClient, toMouvement, toParametres, toProduit, toUser, toUserPartiel, toVariante, toVente } from './lib/mappers';
+import type { CartLine, Client, DB, ModePaiement, Parametres, Produit, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
+import { ApiError, del, get, post, put, setUnauthorizedHandler, token } from './api';
+import { fromClient, fromParametres, fromProduit, fromUser, fromVente, toClient, toParametres, toProduit, toUser, toVariante, toVente } from './lib/mappers';
 import { buildLignes, totaux } from './lib/calc';
 import { r2 } from './lib/format';
 import { t } from './i18n';
@@ -45,19 +45,22 @@ export const useApp = () => {
   return c;
 };
 
-type Part = 'produits' | 'clients' | 'ventes' | 'mouvements' | 'parametres' | 'users';
-const ALL: Part[] = ['produits', 'clients', 'ventes', 'mouvements', 'parametres', 'users'];
+/**
+ * Données chargées à la connexion : elles ne grossissent pas avec l'historique de la boutique.
+ * Les ventes, mouvements et statistiques sont lus à la demande par les pages (voir lib/usePaged.ts).
+ */
+type Part = 'produits' | 'clients' | 'parametres' | 'users' | 'fournisseurs';
+const ALL: Part[] = ['produits', 'clients', 'parametres', 'users', 'fournisseurs'];
 
 interface Data {
-  produits: Produit[]; variantes: Variante[]; clients: Client[]; ventes: Vente[]; mouvements: Mouvement[];
+  produits: Produit[]; variantes: Variante[]; clients: Client[];
   parametres: Parametres;
   /** Liste complète des comptes : réservée à l'administrateur. */
   comptes: User[] | null;
-  /** Noms connus (id → nom), lus dans les ventes et mouvements : un vendeur n'a pas accès à la liste des comptes. */
-  noms: Record<string, string>;
+  fournisseurs: string[];
 }
 const EMPTY: Data = {
-  produits: [], variantes: [], clients: [], ventes: [], mouvements: [], comptes: null, noms: {},
+  produits: [], variantes: [], clients: [], comptes: null, fournisseurs: [],
   parametres: { boutique: 'Pagnes de Lomé', adresse: '', telephone: '', ticketFormat: '80mm', remiseMaxVendeur: 15, messageTicket: '' },
 };
 
@@ -69,11 +72,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const userRef = useRef(user);
   userRef.current = user;
 
-  const db = useMemo<DB>(() => {
-    const users = data.comptes ?? [...new Set([...Object.keys(data.noms), ...(user ? [user.id] : [])])]
-      .map(id => (user && id === user.id ? user : toUserPartiel({ id, nom: data.noms[id] })));
-    return { produits: data.produits, variantes: data.variantes, clients: data.clients, ventes: data.ventes, mouvements: data.mouvements, users, parametres: data.parametres, prochainNumero: 0 };
-  }, [data, user]);
+  const db = useMemo<DB>(() => ({
+    produits: data.produits, variantes: data.variantes, clients: data.clients,
+    users: data.comptes ?? (user ? [user] : []), // un vendeur n'a pas accès à la liste des comptes
+    parametres: data.parametres, fournisseurs: data.fournisseurs,
+  }), [data, user]);
   const dbRef = useRef(db);
   dbRef.current = db;
 
@@ -81,29 +84,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const load = useCallback(async (parts: Part[], role?: Role) => {
     const want = new Set(parts);
     const admin = (role ?? userRef.current?.role) === 'admin';
-    const [produits, clients, ventes, mouvements, parametres, comptes] = await Promise.all([
+    const [produits, clients, parametres, comptes, fournisseurs] = await Promise.all([
       want.has('produits') ? get<any[]>('/produits') : null,
       want.has('clients') ? get<any[]>('/clients') : null,
-      want.has('ventes') ? getAll('/ventes') : null,
-      want.has('mouvements') ? getAll('/mouvements') : null,
       want.has('parametres') ? get('/parametres') : null,
       want.has('users') && admin ? get<any[]>('/users') : null,
+      want.has('fournisseurs') && admin ? get<string[]>('/fournisseurs') : null,
     ]);
-    setData(prev => {
-      const noms = { ...prev.noms };
-      ventes?.forEach(v => { if (v.vendeur) noms[String(v.vendeur.id)] = v.vendeur.nom; });
-      mouvements?.forEach(m => { if (m.utilisateur) noms[String(m.utilisateur.id)] = m.utilisateur.nom; });
-      return {
-        produits: produits ? produits.map(toProduit) : prev.produits,
-        variantes: produits ? produits.flatMap(p => (p.variantes ?? []).map(toVariante)) : prev.variantes,
-        clients: clients ? clients.map(toClient) : prev.clients,
-        ventes: ventes ? ventes.map(toVente) : prev.ventes,
-        mouvements: mouvements ? mouvements.map(toMouvement) : prev.mouvements,
-        parametres: parametres ? toParametres(parametres) : prev.parametres,
-        comptes: comptes ? comptes.map(toUser) : prev.comptes,
-        noms,
-      };
-    });
+    setData(prev => ({
+      produits: produits ? produits.map(toProduit) : prev.produits,
+      variantes: produits ? produits.flatMap(p => (p.variantes ?? []).map(toVariante)) : prev.variantes,
+      clients: clients ? clients.map(toClient) : prev.clients,
+      parametres: parametres ? toParametres(parametres) : prev.parametres,
+      comptes: comptes ? comptes.map(toUser) : prev.comptes,
+      fournisseurs: fournisseurs ?? prev.fournisseurs,
+    }));
   }, []);
 
   const clear = useCallback(() => { token.set(null); setUser(null); setData(EMPTY); }, []);
@@ -169,11 +164,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const payload = fromProduit({ ...p, nom: p.nom.trim() }, vars);
       return run(async () => {
         await (exists ? put(`/produits/${p.id}`, payload) : post('/produits', payload));
-        await load(['produits', 'mouvements']);
+        await load(['produits', 'fournisseurs']);
       });
     },
 
-    deleteProduit: id => run(async () => { await del(`/produits/${id}`); await load(['produits', 'mouvements']); }),
+    deleteProduit: id => run(async () => { await del(`/produits/${id}`); await load(['produits', 'fournisseurs']); }),
 
     entreeStock: async i => {
       if (!(i.quantite > 0)) return fail(t('err.quantite'));
@@ -182,7 +177,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           unite: i.unite, quantite: i.quantite, fournisseur: i.fournisseur.trim() || null,
           prix_achat_pagne: i.prixAchatPagne > 0 ? Math.round(i.prixAchatPagne) : null, motif: i.motif.trim() || null,
         });
-        await load(['produits', 'mouvements']);
+        await load(['produits', 'fournisseurs']);
       });
     },
 
@@ -194,7 +189,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (r2(i.nouveauStock - v.stock) === 0) return fail(t('err.aucunEcart'));
       return run(async () => {
         await post(`/variantes/${i.varianteId}/ajuster`, { nouveau_stock: i.nouveauStock, motif: i.motif.trim() });
-        await load(['produits', 'mouvements']);
+        await load(['produits', 'fournisseurs']);
       });
     },
 
@@ -217,14 +212,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return run(async () => {
         // La vente est validée par le serveur (stock, remise, numéro) : c'est lui qui fait foi, pas ce calcul.
         const vente = toVente(await post('/ventes', fromVente(i)));
-        await load(['produits', 'ventes', 'mouvements']);
+        await load(['produits', 'clients']);
         return vente;
       });
     },
 
     annulerVente: async (id, motif) => {
       if (!motif.trim()) return fail(t('err.motifRequis'));
-      return run(async () => { await post(`/ventes/${id}/annuler`, { motif: motif.trim() }); await load(['ventes', 'produits', 'mouvements']); });
+      return run(async () => { await post(`/ventes/${id}/annuler`, { motif: motif.trim() }); await load(['produits', 'clients']); });
     },
 
     saveClient: async c => {
@@ -237,7 +232,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     },
 
-    deleteClient: id => run(async () => { await del(`/clients/${id}`); await load(['clients', 'ventes']); }),
+    deleteClient: id => run(async () => { await del(`/clients/${id}`); await load(['clients']); }),
 
     saveParametres: async p => run(async () => { await put('/parametres', fromParametres(p)); await load(['parametres']); }),
 

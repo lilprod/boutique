@@ -340,6 +340,124 @@ class ApiTest extends TestCase
         $this->assertNull($prevol('https://site-malveillant.example')->headers->get('Access-Control-Allow-Origin'));
     }
 
+    /** Trois ventes de 38 000 / 76 000 (annulée) / 38 000 FCFA, coût d'achat 27 000 le pagne. */
+    private function jeuDeVentes(): int
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $this->vente($this->vendeur, $vid)->assertCreated();
+        $annulee = $this->vente($this->autreVendeur, $vid, ['quantite' => 2])->assertCreated()->json();
+        $this->vente($this->autreVendeur, $vid)->assertCreated();
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/ventes/{$annulee['id']}/annuler", ['motif' => 'Erreur'])->assertOk();
+        return $vid;
+    }
+
+    public function test_tableau_de_bord_admin_exclut_les_ventes_annulees(): void
+    {
+        $this->jeuDeVentes();
+        Sanctum::actingAs($this->admin);
+        $r = $this->getJson('/api/tableau-de-bord')->assertOk()->json();
+
+        $this->assertSame(now()->toDateString(), $r['aujourd_hui']);
+        $this->assertSame(['ventes' => 2, 'ca' => 76000, 'marge' => 22000], $r['jour']);
+        $this->assertCount(30, $r['serie']);
+        $this->assertSame($r['aujourd_hui'], $r['serie'][29]['date']);
+        $this->assertSame(0, $r['serie'][0]['ca']); // les jours sans vente sont présents, à zéro
+        $this->assertSame(76000, $r['ca_periode']);
+
+        $this->assertCount(1, $r['top_produits']);
+        $this->assertSame(['libelle' => 'Wax Damier', 'total' => 76000, 'yards' => 12], [
+            'libelle' => $r['top_produits'][0]['libelle'], 'total' => $r['top_produits'][0]['total'], 'yards' => (int) $r['top_produits'][0]['yards'],
+        ]);
+        $this->assertEqualsCanonicalizing([38000, 38000], array_column($r['par_vendeur'], 'total'));
+
+        $this->assertCount(3, $r['dernieres']); // annulée comprise
+        $this->assertContains('annulee', array_column($r['dernieres'], 'statut'));
+        $this->assertSame(['id', 'nom'], array_keys($r['dernieres'][0]['vendeur']));
+    }
+
+    public function test_tableau_de_bord_vendeur_ne_voit_que_ses_ventes_et_pas_la_marge(): void
+    {
+        $this->jeuDeVentes();
+        Sanctum::actingAs($this->vendeur);
+        $r = $this->getJson('/api/tableau-de-bord')->assertOk()->json();
+
+        $this->assertSame(['ventes' => 1, 'ca' => 38000], $r['jour']);
+        $this->assertArrayNotHasKey('marge', $r['serie'][29]);
+        $this->assertArrayNotHasKey('par_vendeur', $r);
+        $this->assertCount(1, $r['dernieres']);
+        $this->assertSame(38000, $r['top_produits'][0]['total']);
+    }
+
+    public function test_tableau_de_bord_sans_vente_renvoie_des_zeros(): void
+    {
+        Sanctum::actingAs($this->admin);
+        $r = $this->getJson('/api/tableau-de-bord')->assertOk()->json();
+        $this->assertSame(['ventes' => 0, 'ca' => 0, 'marge' => 0], $r['jour']);
+        $this->assertSame([], $r['top_produits']);
+        $this->assertSame([], $r['dernieres']);
+    }
+
+    public function test_recherche_et_filtres_des_ventes(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $client = \App\Models\Client::create(['nom' => 'Akossiwa Mensah']);
+        $this->vente($this->vendeur, $vid, [], ['client_id' => $client->id])->assertCreated();                                   // V-00001
+        $this->vente($this->vendeur, $vid, [], ['paiement' => ['mode' => 'flooz', 'reference' => 'FZ777']])->assertCreated();   // V-00002
+        $this->vente($this->autreVendeur, $vid)->assertCreated();                                                                // V-00003
+
+        Sanctum::actingAs($this->admin);
+        $numeros = fn (string $qs) => array_column($this->getJson("/api/ventes?$qs")->assertOk()->json('data'), 'numero');
+
+        $this->assertSame([1], $numeros('q=akossiwa'));      // client, sans tenir compte de la casse
+        $this->assertSame([2], $numeros('q=FZ777'));         // référence de paiement
+        $this->assertSame([3], $numeros('q=V-00003'));       // numéro affiché
+        $this->assertSame([3], $numeros('q=3'));             // numéro brut
+        $this->assertSame([3], $numeros('q=essenam'));       // vendeur
+        $this->assertCount(3, $numeros('q=damier'));         // article
+        $this->assertSame([], $numeros('q=introuvable'));
+        $this->assertSame([], $numeros('du=' . now()->addDay()->toDateString()));
+        $this->assertCount(3, $numeros('du=' . now()->toDateString() . '&au=' . now()->toDateString()));
+
+        $this->getJson('/api/ventes?statut=nimporte')->assertStatus(422);
+
+        // Le filtre ne contourne pas la portée : un vendeur ne trouve pas les ventes des autres.
+        Sanctum::actingAs($this->vendeur);
+        $this->assertSame([], array_column($this->getJson('/api/ventes?q=essenam')->json('data'), 'numero'));
+    }
+
+    public function test_clients_exposent_achats_depense_et_derniere_vente(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $avec = \App\Models\Client::create(['nom' => 'Avec achats']);
+        \App\Models\Client::create(['nom' => 'Sans achat']);
+        $this->vente($this->vendeur, $vid, [], ['client_id' => $avec->id])->assertCreated();
+        $annulee = $this->vente($this->vendeur, $vid, [], ['client_id' => $avec->id])->assertCreated()->json();
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/ventes/{$annulee['id']}/annuler", ['motif' => 'x'])->assertOk();
+
+        $clients = collect($this->getJson('/api/clients')->assertOk()->json())->keyBy('nom');
+        $this->assertSame(1, $clients['Avec achats']['achats']);
+        $this->assertSame(38000, $clients['Avec achats']['depense']);
+        $this->assertNotNull($clients['Avec achats']['derniere_vente']);
+        $this->assertSame(0, $clients['Sans achat']['achats']);
+        $this->assertNull($clients['Sans achat']['derniere_vente']);
+    }
+
+    public function test_fournisseurs_reserves_a_l_admin_et_filtre_des_mouvements(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/variantes/{$vid}/entree", ['unite' => 'yard', 'quantite' => 5, 'fournisseur' => 'Kponton'])->assertOk();
+        $this->assertSame(['Kponton'], $this->getJson('/api/fournisseurs')->assertOk()->json());
+
+        $this->assertCount(1, $this->getJson("/api/mouvements?type=entree&variante_id={$vid}&per_page=1")->assertOk()->json('data'));
+        $this->getJson('/api/mouvements?type=inconnu')->assertStatus(422);
+
+        Sanctum::actingAs($this->vendeur);
+        $this->getJson('/api/fournisseurs')->assertForbidden();
+    }
+
     public function test_identifiant_en_doublon_refuse_en_francais(): void
     {
         Sanctum::actingAs($this->admin);

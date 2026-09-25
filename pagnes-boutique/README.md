@@ -47,7 +47,8 @@ src/
   types.ts            modèle de données
   api.ts              client HTTP : jeton Bearer, erreurs normalisées, chargement paginé
   lib/mappers.ts      conversion API (snake_case, ids numériques) <-> types du frontend
-  store.tsx           état global (Context) chargé depuis l'API ; actions métier asynchrones
+  store.tsx           état global (Context) : produits, clients, paramètres, comptes ; actions métier asynchrones
+  lib/usePaged.ts     lecture paginée à la demande (ventes, mouvements) ; lib/useFetch.ts : lecture simple (tableau de bord)
   i18n.ts             tous les textes de l'interface
   lib/                calculs (remises, totaux, marge) et formatage
   data/catalogue.ts   suggestions de coloris et de types du formulaire produit
@@ -58,6 +59,8 @@ public/               manifest PWA, service worker, icône
 
 Les actions de `store.tsx` renvoient une promesse de `{ ok, error?, data? }` : les pages affichent `error` tel quel (message français du serveur). Après chaque modification, les données touchées sont rechargées depuis l'API.
 
+Le chargement à la connexion ne dépend pas de la taille de l'historique : les ventes (recherche, statut, dates), les mouvements de stock (type, coloris) et les statistiques du tableau de bord sont lus à la demande, filtrés et paginés par le serveur. Les statistiques par client (achats, dépense, dernier achat) viennent de la liste des clients.
+
 ## Écarts par rapport au cahier des charges
 
 - **CSS sur mesure au lieu de Tailwind**, **graphiques SVG maison au lieu de Recharts**, **routeur par hash au lieu de React Router**, **Context au lieu de Zustand** : moins de dépendances, application plus légère, mêmes fonctions.
@@ -66,7 +69,7 @@ Les actions de `store.tsx` renvoient une promesse de `{ ok, error?, data? }` : l
 
 ## Limites connues
 
-- **Tableau de bord** : les agrégats sont calculés dans le navigateur à partir de tout l'historique des ventes, rechargé à chaque connexion. À terme, des statistiques côté serveur seront nécessaires.
+- **Tableau de bord** : fenêtre fixe de 30 jours ; pas encore de période au choix.
 - **Photos** : réduites à 360 px, envoyées en `data:` URL et renvoyées avec chaque chargement du catalogue ; à remplacer par un envoi de fichier si le catalogue grossit.
 - **Jeton dans le `localStorage`** : lisible par tout script de la page ; la protection repose sur l'absence de contenu tiers et sur l'expiration à 12 h.
 - **Messages d'erreur génériques** de validation Laravel en anglais (rares : les contrôles de saisie du frontend les devancent).

@@ -19,6 +19,7 @@ export const toVariante = (v: any): Variante => ({
 
 export const toClient = (c: any): Client => ({
   id: s(c.id), nom: c.nom, telephone: c.telephone ?? '', adresse: c.adresse ?? '', creeLe: c.created_at,
+  achats: n(c.achats), depense: n(c.depense), derniereVente: c.derniere_vente ?? undefined,
 });
 
 const toLigne = (l: any): LigneVente => ({
@@ -29,7 +30,8 @@ const toLigne = (l: any): LigneVente => ({
 });
 
 export const toVente = (v: any): Vente => ({
-  id: s(v.id), numero: n(v.numero), date: v.created_at, vendeurId: s(v.vendeur_id), clientId: v.client_id == null ? undefined : s(v.client_id),
+  id: s(v.id), numero: n(v.numero), date: v.created_at, vendeurId: s(v.vendeur_id), vendeurNom: v.vendeur?.nom,
+  clientId: v.client_id == null ? undefined : s(v.client_id), clientNom: v.client?.nom,
   lignes: (v.lignes ?? []).map(toLigne), sousTotal: n(v.sous_total), remise: { type: v.remise_type, valeur: n(v.remise_valeur) },
   remiseMontant: n(v.remise_montant), total: n(v.total), marge: n(v.marge),
   paiement: { mode: v.paiement_mode as ModePaiement, reference: v.paiement_reference ?? undefined, recu: v.paiement_recu ?? undefined },
@@ -38,7 +40,7 @@ export const toVente = (v: any): Vente => ({
 });
 
 export const toMouvement = (m: any): Mouvement => ({
-  id: s(m.id), date: m.created_at, varianteId: s(m.variante_id), type: m.type, yards: n(m.yards), userId: s(m.user_id), motif: m.motif,
+  id: s(m.id), date: m.created_at, varianteId: s(m.variante_id), type: m.type, yards: n(m.yards), userId: s(m.user_id), userNom: m.utilisateur?.nom, motif: m.motif,
   fournisseur: m.fournisseur ?? undefined, prixAchatPagne: m.prix_achat_pagne ?? undefined, venteId: m.vente_id == null ? undefined : s(m.vente_id),
 });
 

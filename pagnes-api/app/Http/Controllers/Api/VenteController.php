@@ -6,7 +6,9 @@ use App\Exceptions\RegleMetierException;
 use App\Http\Controllers\Controller;
 use App\Models\Vente;
 use App\Services\VenteService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 
 class VenteController extends Controller
 {
@@ -19,11 +21,35 @@ class VenteController extends Controller
         if (!$request->user()->estAdmin()) {
             $q->where('vendeur_id', $request->user()->id); // un vendeur ne voit que ses propres ventes
         }
-        if ($request->filled('statut')) $q->where('statut', $request->string('statut'));
-        // per_page (1-200) : le frontend charge tout l'historique par pages successives.
+        $filtres = $request->validate([
+            'statut' => 'nullable|in:validee,annulee',
+            'q' => 'nullable|string|max:100',
+            'du' => 'nullable|date',
+            'au' => 'nullable|date',
+        ]);
+        if (!empty($filtres['statut'])) $q->where('statut', $filtres['statut']);
+        if (!empty($filtres['du'])) $q->where('created_at', '>=', Carbon::parse($filtres['du'])->startOfDay());
+        if (!empty($filtres['au'])) $q->where('created_at', '<=', Carbon::parse($filtres['au'])->endOfDay());
+        if (!empty($filtres['q'])) $this->recherche($q, trim($filtres['q']));
+        // per_page (1-200) : l'écran « Ventes » lit l'historique page par page.
         $page = $q->paginate(max(1, min(200, $request->integer('per_page', 50))));
         $page->getCollection()->each(fn (Vente $v) => $this->masquerCouts($v, $request));
         return $page;
+    }
+
+    /** Recherche libre : numéro (« V-00012 » ou « 12 »), client, vendeur, article, coloris ou référence de paiement. */
+    private function recherche(Builder $q, string $mot): void
+    {
+        $like = '%' . addcslashes($mot, '%_\\') . '%';
+        $q->where(function (Builder $w) use ($mot, $like) {
+            $w->where('paiement_reference', 'like', $like)
+                ->orWhereHas('client', fn (Builder $c) => $c->where('nom', 'like', $like))
+                ->orWhereHas('vendeur', fn (Builder $c) => $c->where('nom', 'like', $like))
+                ->orWhereHas('lignes', fn (Builder $c) => $c->where('libelle', 'like', $like)->orWhere('coloris', 'like', $like));
+            if (preg_match('/^v?-?0*(\d+)$/i', $mot, $m)) {
+                $w->orWhere('numero', (int) $m[1]);
+            }
+        });
     }
 
     public function show(Request $request, Vente $vente)

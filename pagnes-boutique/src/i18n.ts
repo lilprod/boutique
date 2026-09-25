@@ -6,7 +6,8 @@ const fr: Record<string, string> = {
   // Commun
   'common.annuler': 'Annuler', 'common.confirmer': 'Confirmer', 'common.enregistrer': 'Enregistrer', 'common.fermer': 'Fermer',
   'common.modifier': 'Modifier', 'common.supprimer': 'Supprimer', 'common.actions': 'Actions', 'common.aucunResultat': 'Aucun résultat pour ces critères.',
-  'common.voirPlus': 'Afficher plus',
+  'common.voirPlus': 'Afficher plus', 'common.reessayer': 'Réessayer',
+  'ventes.du': 'Du', 'ventes.au': 'Au', 'ventes.compte': 'Affichées : {n} sur {total}',
 
   // Navigation
   'nav.principale': 'Navigation principale', 'nav.dashboard': 'Tableau de bord', 'nav.caisse': 'Caisse', 'nav.stock': 'Stock', 'nav.ventes': 'Ventes',

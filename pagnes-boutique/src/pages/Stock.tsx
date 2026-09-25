@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { LuHistory, LuImagePlus, LuPackagePlus, LuPencil, LuPlus, LuSearch, LuSlidersHorizontal, LuTrash2, LuX } from 'react-icons/lu';
-import type { Produit, UniteVente, Variante } from '../types';
+import type { Mouvement, Produit, UniteVente, Variante } from '../types';
+import { toMouvement } from '../lib/mappers';
+import { usePaged } from '../lib/usePaged';
 import { useApp, type VarForm } from '../store';
 import { t, uniteLabel } from '../i18n';
 import { Badge, Empty, Field, fileToDataUrl, Modal, NumInput, Segmented, Swatch, useUI } from '../components/ui';
@@ -36,7 +38,8 @@ export default function Stock() {
     return true;
   });
 
-  const mv = useMemo(() => [...db.mouvements].filter(m => (!mtype || m.type === mtype) && (!histVid || m.varianteId === histVid)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 300), [db.mouvements, mtype, histVid]);
+  // L'historique est lu à la demande, filtré et paginé par le serveur (il n'est pas chargé à la connexion).
+  const mvt = usePaged<Mouvement>('/mouvements', { type: mtype, variante_id: histVid ?? undefined }, toMouvement, { enabled: tab === 'mouvements', perPage: 100 });
   const label = (vid: string) => { const v = db.variantes.find(x => x.id === vid); const p = v && db.produits.find(x => x.id === v.produitId); return v && p ? `${p.nom} — ${v.coloris}` : '—'; };
 
   const remove = async (p: Produit) => {
@@ -117,19 +120,22 @@ export default function Stock() {
             <table className="tbl">
               <thead><tr><th>{t('ventes.date')}</th><th>{t('stock.article')}</th><th>{t('stock.typeMouvement')}</th><th className="r">{t('stock.quantite')}</th><th>{t('stock.utilisateur')}</th><th>{t('stock.detail')}</th></tr></thead>
               <tbody>
-                {mv.map(m => (
+                {mvt.rows.map(m => (
                   <tr key={m.id}>
                     <td>{fmtDateTime(m.date)}</td><td>{label(m.varianteId)}</td>
                     <td><Badge kind={m.type === 'entree' ? 'ok' : m.type === 'vente' ? 'info' : m.type === 'annulation' ? 'mute' : 'warn'}>{t('mvt.' + m.type)}</Badge></td>
                     <td className={'r strong ' + (m.yards < 0 ? 'red' : 'green')}>{m.yards > 0 ? '+' : ''}{num(m.yards)} yd</td>
-                    <td>{db.users.find(u => u.id === m.userId)?.nom ?? '—'}</td>
+                    <td>{m.userNom ?? '—'}</td>
                     <td className="muted-s">{m.motif}{m.fournisseur ? ` · ${m.fournisseur}` : ''}{admin && m.prixAchatPagne ? ` · ${fcfa(m.prixAchatPagne)}/${t('unite.pagne')}` : ''}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {mv.length === 0 && <Empty title={t('common.aucunResultat')} />}
+            {mvt.error && <div role="alert" className="pad"><p className="error">{mvt.error}</p><button className="btn btn-sm" onClick={() => void mvt.reload()}>{t('common.reessayer')}</button></div>}
+            {!mvt.error && mvt.loading && mvt.rows.length === 0 && <p className="muted-p pad" role="status">{t('app.chargement')}</p>}
+            {!mvt.error && !mvt.loading && mvt.rows.length === 0 && <Empty title={t('common.aucunResultat')} />}
           </div>
+          {mvt.hasMore && <div className="table-foot"><button className="btn btn-sm" disabled={mvt.loading} onClick={() => void mvt.more()}>{t('common.voirPlus')}</button></div>}
         </section>
       )}
 
@@ -156,8 +162,6 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
     const pre = COLORIS.find(c => c[0] === name);
     upVar(i, pre ? { coloris: name, c1: pre[1], c2: pre[2] } : { coloris: name });
   };
-  const suppliers = [...new Set(db.mouvements.map(m => m.fournisseur).filter(Boolean))];
-  void suppliers;
 
   const onImage = async (file?: File) => {
     if (!file) return;
@@ -243,7 +247,7 @@ function EntreeForm({ vid, onClose }: { vid: string; onClose: () => void }) {
   const [fournisseur, setFournisseur] = useState('');
   const [prix, setPrix] = useState(p.prixAchatPagne);
   const [motif, setMotif] = useState('');
-  const suppliers = [...new Set(db.mouvements.map(m => m.fournisseur).filter(Boolean))] as string[];
+  const suppliers = db.fournisseurs; // déjà saisis dans des entrées de stock (fournis par l'API)
   const yards = yardsOf(p, unite, q);
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ParametreController;
 use App\Http\Controllers\Api\ProduitController;
+use App\Http\Controllers\Api\StatistiqueController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VarianteController;
 use App\Http\Controllers\Api\VenteController;
@@ -24,6 +25,8 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
     Route::post('clients', [ClientController::class, 'store']);
     Route::put('clients/{client}', [ClientController::class, 'update']);
 
+    Route::get('tableau-de-bord', [StatistiqueController::class, 'tableauDeBord']);
+
     Route::get('ventes', [VenteController::class, 'index']);
     Route::get('ventes/{vente}', [VenteController::class, 'show']);
     Route::post('ventes', [VenteController::class, 'store']);
@@ -34,6 +37,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
         Route::put('produits/{produit}', [ProduitController::class, 'update']);
         Route::delete('produits/{produit}', [ProduitController::class, 'destroy']);
 
+        Route::get('fournisseurs', [StatistiqueController::class, 'fournisseurs']);
         Route::post('variantes/{variante}/entree', [VarianteController::class, 'entree']);
         Route::post('variantes/{variante}/ajuster', [VarianteController::class, 'ajuster']);
 

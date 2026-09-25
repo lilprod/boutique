@@ -10,7 +10,9 @@ Le dépôt contient deux applications :
 | [`pagnes-boutique/`](pagnes-boutique) | Frontend (PWA, tablette d'abord) | React 19, TypeScript, Vite | Fonctionnel, branché sur l'API |
 | [`pagnes-api/`](pagnes-api) | API REST | Laravel 13, Sanctum, MySQL | Fonctionnel, testé |
 
-Le frontend charge toutes ses données depuis l'API après la connexion (jeton Bearer) : rien n'est stocké dans le navigateur, hormis le jeton. **L'API doit donc tourner avant d'ouvrir le frontend.**
+Le frontend lit toutes ses données dans l'API (jeton Bearer) : rien n'est stocké dans le navigateur, hormis le jeton. **L'API doit donc tourner avant d'ouvrir le frontend.**
+
+À la connexion, il ne charge que ce qui ne grossit pas avec l'activité (produits, clients, paramètres, comptes). L'historique est lu à la demande, filtré et paginé par le serveur : ventes, mouvements de stock, et les statistiques du tableau de bord (calculées par la base).
 
 ## Démarrage rapide
 
@@ -109,15 +111,16 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 
 Authentification par jeton Sanctum : `POST /api/login` renvoie `{ user, token }`, à envoyer ensuite en `Authorization: Bearer <token>`. Les jetons expirent au bout de 12 h, la connexion est limitée à 5 tentatives par minute, et un compte désactivé perd ses jetons.
 
-Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher. Les listes `ventes` et `mouvements` sont paginées (`?per_page=`, 200 au plus) : le frontend charge toutes les pages.
+Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher. Les listes `ventes` et `mouvements` sont paginées (`?page=`, `?per_page=`, 200 au plus). La recherche `?q=` des ventes porte sur le numéro (`V-00012` ou `12`), le client, le vendeur, l'article, le coloris et la référence de paiement. Les « jours » du tableau de bord suivent le fuseau `APP_TIMEZONE` (`Africa/Lome`, UTC+0).
 
 | Domaine | Routes |
 |---|---|
 | Session | `POST /api/login`, `POST /api/logout`, `GET /api/me` |
 | Produits | `GET /api/produits` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}` |
-| Stock | `GET /api/mouvements` ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster` |
-| Clients | `GET`, `POST /api/clients`, `PUT /api/clients/{id}` ; admin : `DELETE /{id}` |
-| Ventes | `GET /api/ventes`, `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
+| Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
+| Clients | `GET`, `POST /api/clients`, `PUT /api/clients/{id}` ; admin : `DELETE /{id}`. La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
+| Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
+| Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
 | Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` |
 | Utilisateurs | admin : `GET`, `POST /api/users`, `PUT /api/users/{id}` |
 
@@ -142,9 +145,8 @@ pagnes-api/                 API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Statistiques côté serveur** : le tableau de bord recalcule tout dans le navigateur à partir de l'historique complet des ventes, chargé à chaque connexion. Il faut un endpoint d'agrégats (par jour, vendeur, produit) et des filtres par date, avant que l'historique ne devienne volumineux.
-2. **Photos produit** : elles sont envoyées en `data:` URL (360 px) et stockées en base (`mediumText`), puis renvoyées avec chaque `GET /produits`. À remplacer par un envoi de fichier (`Storage`) et une URL.
-3. **Messages de validation Laravel en français** : ceux des règles métier et des comptes le sont, pas les erreurs de validation génériques (fichiers de langue absents).
-4. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-5. **Hors ligne** : le service worker ne met en cache que l'application, pas les données (volontairement : elles sont confidentielles) ; la caisse ne fonctionne donc pas sans réseau.
-6. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+1. **Photos produit** : elles sont envoyées en `data:` URL (360 px) et stockées en base (`mediumText`), puis renvoyées avec chaque `GET /produits`. À remplacer par un envoi de fichier (`Storage`) et une URL.
+2. **Messages de validation Laravel en français** : ceux des règles métier et des comptes le sont, pas les erreurs de validation génériques (fichiers de langue absents).
+3. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
+4. **Hors ligne** : le service worker ne met en cache que l'application, pas les données (volontairement : elles sont confidentielles) ; la caisse ne fonctionne donc pas sans réseau.
+5. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
