@@ -2,15 +2,21 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Produit extends Model
 {
+    // `image` (chemin) n'est pas modifiable en masse : seul ProduitService::definirImage() le renseigne.
     protected $fillable = [
-        'nom', 'type', 'motif', 'origine', 'image', 'yards_par_pagne',
+        'nom', 'type', 'motif', 'origine', 'yards_par_pagne',
         'vend_pagne', 'vend_yard', 'prix_pagne', 'prix_yard', 'prix_achat_pagne',
     ];
+
+    // Le JSON expose `image_url` (adresse complète) et non le chemin de stockage.
+    protected $hidden = ['image'];
+    protected $appends = ['image_url'];
 
     protected function casts(): array
     {
@@ -19,6 +25,11 @@ class Produit extends Model
             'vend_pagne' => 'boolean',
             'vend_yard' => 'boolean',
         ];
+    }
+
+    protected function imageUrl(): Attribute
+    {
+        return Attribute::get(fn () => $this->image ? url('photos/' . $this->image) : null);
     }
 
     public function variantes(): HasMany

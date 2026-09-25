@@ -136,14 +136,19 @@ export function doPrint(format: '80mm' | 'A4') {
   setTimeout(() => s.remove(), 1500);
 }
 
-export async function fileToDataUrl(file: File, max = 360): Promise<string> {
+/** Réduit une photo (360 px au plus) et la ré-encode en JPEG : `blob` part vers l'API, `preview` (URL locale) sert à l'aperçu. */
+export async function resizeImage(file: File, max = 360): Promise<{ blob: Blob; preview: string }> {
   const url = URL.createObjectURL(file);
-  const img = new Image();
-  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
-  const k = Math.min(1, max / Math.max(img.width, img.height));
-  const c = document.createElement('canvas');
-  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-  c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-  URL.revokeObjectURL(url);
-  return c.toDataURL('image/jpeg', 0.8);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob>((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('encodage'))), 'image/jpeg', 0.82));
+    return { blob, preview: URL.createObjectURL(blob) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

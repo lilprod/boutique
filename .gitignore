@@ -5,3 +5,6 @@ dist/
 !.env.example
 *.log
 .DS_Store
+
+# Photos de produits déposées par les utilisateurs (disque « photos » de l API)
+pagnes-api/public/photos/

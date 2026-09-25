@@ -6,7 +6,7 @@ const s = (id: unknown) => String(id);
 const n = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
 
 export const toProduit = (p: any): Produit => ({
-  id: s(p.id), nom: p.nom, type: p.type, motif: p.motif ?? '', origine: p.origine ?? '', image: p.image ?? undefined,
+  id: s(p.id), nom: p.nom, type: p.type, motif: p.motif ?? '', origine: p.origine ?? '', image: p.image_url ?? undefined, // adresse du fichier
   yardsParPagne: n(p.yards_par_pagne), vendPagne: !!p.vend_pagne, vendYard: !!p.vend_yard,
   prixPagne: n(p.prix_pagne), prixYard: n(p.prix_yard),
   // Le prix d'achat n'est envoyé qu'à l'administrateur.
@@ -63,7 +63,7 @@ export const toUserPartiel = (u: { id: unknown; nom: string }): User => ({
 
 export const fromProduit = (p: Produit, vars: VarForm[]) => ({
   nom: p.nom, type: p.type, motif: p.motif || null, origine: p.origine || null,
-  image: p.image ?? null, // null explicite : « retirer la photo » doit vraiment l'effacer
+  // La photo n'est pas envoyée avec le produit : elle a son propre appel (POST/DELETE /produits/{id}/image).
   yards_par_pagne: p.yardsParPagne, vend_pagne: p.vendPagne, vend_yard: p.vendYard,
   prix_pagne: Math.round(p.prixPagne), prix_yard: Math.round(p.prixYard), prix_achat_pagne: Math.round(p.prixAchatPagne),
   variantes: vars.map(v => ({

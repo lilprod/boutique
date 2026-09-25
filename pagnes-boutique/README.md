@@ -70,6 +70,6 @@ Le chargement à la connexion ne dépend pas de la taille de l'historique : les 
 ## Limites connues
 
 - **Tableau de bord** : fenêtre fixe de 30 jours ; pas encore de période au choix.
-- **Photos** : réduites à 360 px, envoyées en `data:` URL et renvoyées avec chaque chargement du catalogue ; à remplacer par un envoi de fichier si le catalogue grossit.
+- **Photos** : réduites à 360 px et ré-encodées en JPEG par le navigateur, puis envoyées comme fichier à l'API (`POST /produits/{id}/image`) après l'enregistrement du produit. Si l'envoi échoue, le produit reste enregistré et un message le signale ; rouvrez le produit pour renvoyer la photo.
 - **Jeton dans le `localStorage`** : lisible par tout script de la page ; la protection repose sur l'absence de contenu tiers et sur l'expiration à 12 h.
 - **Messages d'erreur génériques** de validation Laravel en anglais (rares : les contrôles de saisie du frontend les devancent).

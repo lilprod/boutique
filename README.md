@@ -116,13 +116,19 @@ Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à
 | Domaine | Routes |
 |---|---|
 | Session | `POST /api/login`, `POST /api/logout`, `GET /api/me` |
-| Produits | `GET /api/produits` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}` |
+| Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image` |
 | Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
 | Clients | `GET`, `POST /api/clients`, `PUT /api/clients/{id}` ; admin : `DELETE /{id}`. La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
 | Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
 | Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
 | Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` |
 | Utilisateurs | admin : `GET`, `POST /api/users`, `PUT /api/users/{id}` |
+
+### Photos des produits
+
+Les photos sont des fichiers, pas du texte en base : `POST /api/produits/{id}/image` (JPEG, PNG ou WebP ; 2 Mo et 4 000 px au plus ; SVG refusé) les range dans `pagnes-api/public/photos/produits/` sous un nom aléatoire, et l'API renvoie leur adresse dans `image_url`. Remplacer ou retirer une photo, ou supprimer le produit, efface le fichier.
+
+Ce dossier est ignoré par Git : **il doit être sauvegardé avec la base** et rester accessible en écriture au serveur web. Le `upload_max_filesize` de PHP (2 Mo par défaut) doit rester au moins égal à la limite de 2 Mo ; le frontend envoie des images de 360 px (quelques Ko).
 
 ## Structure
 
@@ -145,8 +151,7 @@ pagnes-api/                 API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Photos produit** : elles sont envoyées en `data:` URL (360 px) et stockées en base (`mediumText`), puis renvoyées avec chaque `GET /produits`. À remplacer par un envoi de fichier (`Storage`) et une URL.
-2. **Messages de validation Laravel en français** : ceux des règles métier et des comptes le sont, pas les erreurs de validation génériques (fichiers de langue absents).
-3. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-4. **Hors ligne** : le service worker ne met en cache que l'application, pas les données (volontairement : elles sont confidentielles) ; la caisse ne fonctionne donc pas sans réseau.
-5. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+1. **Messages de validation Laravel en français** : ceux des règles métier et des comptes le sont, pas les erreurs de validation génériques (fichiers de langue absents).
+2. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
+3. **Hors ligne** : le service worker ne met en cache que l'application, pas les données (volontairement : elles sont confidentielles) ; la caisse ne fonctionne donc pas sans réseau.
+4. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.

@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LuHistory, LuImagePlus, LuPackagePlus, LuPencil, LuPlus, LuSearch, LuSlidersHorizontal, LuTrash2, LuX } from 'react-icons/lu';
 import type { Mouvement, Produit, UniteVente, Variante } from '../types';
 import { toMouvement } from '../lib/mappers';
 import { usePaged } from '../lib/usePaged';
-import { useApp, type VarForm } from '../store';
+import { useApp, type PhotoChange, type VarForm } from '../store';
 import { t, uniteLabel } from '../i18n';
-import { Badge, Empty, Field, fileToDataUrl, Modal, NumInput, Segmented, Swatch, useUI } from '../components/ui';
+import { Badge, Empty, Field, Modal, NumInput, Segmented, Swatch, resizeImage, useUI } from '../components/ui';
 import { COLORIS, TYPES } from '../data/catalogue';
 import { statutStock, yardsOf } from '../lib/calc';
 import { fcfa, fmtDateTime, norm, num, r2, uid } from '../lib/format';
@@ -155,6 +155,9 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
   const [vars, setVars] = useState<VarForm[]>(() =>
     existing ? db.variantes.filter(v => v.produitId === existing.id).map(v => ({ id: v.id, coloris: v.coloris, sku: v.sku, c1: v.c1, c2: v.c2, seuil: v.seuil })) : [{ coloris: '', sku: '', c1: '#E07A1F', c2: '#23306B', seuil: 18, stock: 0 }]);
   const [autoYard, setAutoYard] = useState(!existing);
+  const [photo, setPhoto] = useState<PhotoChange | undefined>(); // undefined : photo inchangée
+  const previews = useRef<string[]>([]);
+  useEffect(() => () => previews.current.forEach(u => URL.revokeObjectURL(u)), []); // libère les aperçus locaux à la fermeture
   const up = <K extends keyof Produit>(k: K, val: Produit[K]) => setP(x => ({ ...x, [k]: val }));
   const suggest = (prixPagne: number, yards: number) => Math.round(((prixPagne / (yards || 1)) * 1.2) / 100) * 100;
   const upVar = (i: number, patch: Partial<VarForm>) => setVars(a => a.map((v, k) => (k === i ? { ...v, ...patch } : v)));
@@ -165,7 +168,11 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
 
   const onImage = async (file?: File) => {
     if (!file) return;
-    try { up('image', await fileToDataUrl(file)); } catch { toast(t('stock.imageErreur'), 'err'); }
+    try {
+      const { blob, preview } = await resizeImage(file);
+      previews.current.push(preview);
+      up('image', preview); setPhoto({ file: blob }); // aperçu local ; le fichier part à l'enregistrement
+    } catch { toast(t('stock.imageErreur'), 'err'); }
   };
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
@@ -174,10 +181,11 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
     const clean = { ...p, nom: p.nom.trim(), motif: p.motif.trim(), origine: p.origine.trim() };
     // SKU laissé vide : le serveur en génère un unique (un SKU calculé ici pourrait entrer en collision).
     setBusy(true);
-    const r = await saveProduit(clean, vars);
+    const r = await saveProduit(clean, vars, photo);
     setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     toast(existing ? t('stock.produitModifie') : t('stock.produitAjoute'));
+    if (r.data?.photoErreur) toast(t('stock.photoEchec', { msg: r.data.photoErreur }), 'err'); // produit enregistré, photo refusée
     onClose();
   };
 
@@ -189,7 +197,7 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
           <Swatch c1={vars[0]?.c1 ?? '#ddd'} c2={vars[0]?.c2 ?? '#999'} seed={p.id} image={p.image} size={96} />
           <div className="img-actions">
             <label className="btn btn-sm"><LuImagePlus /> {t('stock.photo')}<input type="file" accept="image/*" hidden onChange={e => onImage(e.target.files?.[0])} /></label>
-            {p.image && <button type="button" className="btn btn-sm" onClick={() => up('image', undefined)}>{t('stock.retirerPhoto')}</button>}
+            {p.image && <button type="button" className="btn btn-sm" onClick={() => { up('image', undefined); setPhoto(existing?.image ? { remove: true } : undefined); }}>{t('stock.retirerPhoto')}</button>}
           </div>
         </div>
         <Field label={t('stock.nom')} className="span3"><input className="input" value={p.nom} onChange={e => up('nom', e.target.value)} required /></Field>

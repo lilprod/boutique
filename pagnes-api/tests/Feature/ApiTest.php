@@ -4,9 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Mouvement;
 use App\Models\Parametre;
+use App\Models\Produit;
 use App\Models\User;
 use App\Models\Variante;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -293,12 +296,87 @@ class ApiTest extends TestCase
         $this->assertEquals(-12, Mouvement::where('type', 'ajustement')->value('yards'));
     }
 
-    /** Le frontend envoie la photo en data URL (bien plus de 255 caractères). */
-    public function test_photo_produit_en_data_url_acceptee(): void
+    public function test_photo_produit_envoyee_comme_fichier_et_exposee_par_url(): void
     {
-        $image = 'data:image/jpeg;base64,' . str_repeat('A', 120000);
-        $p = $this->produit(['image' => $image]);
-        $this->assertSame(strlen($image), strlen($p['image']));
+        Storage::fake('photos');
+        $p = $this->produit();
+        $this->assertNull($p['image_url']);
+        $this->assertArrayNotHasKey('image', $p); // le chemin de stockage n'est jamais exposé
+
+        Sanctum::actingAs($this->admin);
+        $r = $this->post("/api/produits/{$p['id']}/image", ['image' => UploadedFile::fake()->image('photo.jpg', 400, 300)], ['Accept' => 'application/json'])->assertOk()->json();
+
+        $chemin = Produit::find($p['id'])->image;
+        $this->assertMatchesRegularExpression('#^produits/[0-9a-f-]{36}\.jpg$#', $chemin);
+        Storage::disk('photos')->assertExists($chemin);
+        $this->assertSame(url('photos/' . $chemin), $r['image_url']);
+        $this->assertSame($r['image_url'], $this->getJson('/api/produits')->json('0.image_url')); // la liste porte l'URL, pas le fichier
+    }
+
+    public function test_remplacer_ou_retirer_la_photo_supprime_l_ancien_fichier(): void
+    {
+        Storage::fake('photos');
+        $p = $this->produit();
+        $envoi = fn () => $this->post("/api/produits/{$p['id']}/image", ['image' => UploadedFile::fake()->image('p.png', 200, 200)], ['Accept' => 'application/json'])->assertOk();
+
+        $envoi();
+        $premier = Produit::find($p['id'])->image;
+        $envoi();
+        $second = Produit::find($p['id'])->image;
+        $this->assertNotSame($premier, $second);
+        Storage::disk('photos')->assertMissing($premier);
+        Storage::disk('photos')->assertExists($second);
+
+        $this->deleteJson("/api/produits/{$p['id']}/image")->assertOk()->assertJsonPath('image_url', null);
+        Storage::disk('photos')->assertMissing($second);
+        $this->assertNull(Produit::find($p['id'])->image);
+    }
+
+    public function test_supprimer_un_produit_supprime_sa_photo(): void
+    {
+        Storage::fake('photos');
+        $p = $this->produit();
+        $this->post("/api/produits/{$p['id']}/image", ['image' => UploadedFile::fake()->image('p.jpg')], ['Accept' => 'application/json'])->assertOk();
+        $chemin = Produit::find($p['id'])->image;
+
+        $this->deleteJson("/api/produits/{$p['id']}")->assertNoContent();
+        Storage::disk('photos')->assertMissing($chemin);
+    }
+
+    /** Un SVG (script possible), un faux fichier renommé, un fichier trop lourd ou trop grand sont refusés ; rien n'est écrit. */
+    public function test_photo_invalide_refusee(): void
+    {
+        Storage::fake('photos');
+        $p = $this->produit();
+        $tenter = fn ($fichier) => $this->post("/api/produits/{$p['id']}/image", ['image' => $fichier], ['Accept' => 'application/json']);
+
+        $tenter(UploadedFile::fake()->createWithContent('logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'))
+            ->assertStatus(422)->assertJsonPath('errors.image.0', 'La photo doit être au format JPEG, PNG ou WebP.');
+        $tenter(UploadedFile::fake()->createWithContent('photo.jpg', '<?php echo "pas une image"; ?>'))->assertStatus(422); // extension trompeuse
+        $tenter(UploadedFile::fake()->image('lourde.jpg', 100, 100)->size(3000)) // vraie image, 3 Mo annoncés
+            ->assertStatus(422)->assertJsonPath('errors.image.0', 'La photo ne doit pas dépasser 2 Mo.');
+        $tenter(UploadedFile::fake()->image('immense.jpg', 5000, 100))
+            ->assertStatus(422)->assertJsonPath('errors.image.0', 'La photo est trop grande (4 000 px au plus de chaque côté).');
+        $this->post("/api/produits/{$p['id']}/image", [], ['Accept' => 'application/json'])->assertStatus(422);
+
+        $this->assertNull(Produit::find($p['id'])->image);
+        $this->assertSame([], Storage::disk('photos')->allFiles());
+    }
+
+    public function test_un_vendeur_ne_peut_pas_gerer_les_photos(): void
+    {
+        Storage::fake('photos');
+        $p = $this->produit();
+        Sanctum::actingAs($this->vendeur);
+        $this->post("/api/produits/{$p['id']}/image", ['image' => UploadedFile::fake()->image('p.jpg')], ['Accept' => 'application/json'])->assertForbidden();
+        $this->deleteJson("/api/produits/{$p['id']}/image")->assertForbidden();
+    }
+
+    /** Le chemin de stockage ne peut pas être imposé par la sauvegarde du produit. */
+    public function test_le_chemin_de_l_image_n_est_pas_modifiable_par_le_produit(): void
+    {
+        $p = $this->produit(['image' => '../../.env']);
+        $this->assertNull(Produit::find($p['id'])->image);
     }
 
     /** Un vendeur ne doit voir ni l'identifiant de connexion ni le rôle des collègues dans les ventes. */

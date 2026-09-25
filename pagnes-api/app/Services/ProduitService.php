@@ -8,7 +8,10 @@ use App\Models\Mouvement;
 use App\Models\Produit;
 use App\Models\User;
 use App\Models\Variante;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProduitService
 {
@@ -108,8 +111,37 @@ class ProduitService
         }
     }
 
+    /** Remplace la photo du produit ; l'ancien fichier est supprimé une fois le nouveau enregistré. */
+    public function definirImage(Produit $produit, UploadedFile $fichier): Produit
+    {
+        $ancien = $produit->image;
+        // Nom aléatoire et extension déduite du contenu réel (jamais celle envoyée par le client).
+        $chemin = Storage::disk('photos')->putFileAs('produits', $fichier, Str::uuid() . '.' . $fichier->extension());
+        if ($chemin === false) {
+            throw new RegleMetierException("La photo n'a pas pu être enregistrée sur le serveur.");
+        }
+        $produit->forceFill(['image' => $chemin])->save();
+        if ($ancien) {
+            Storage::disk('photos')->delete($ancien);
+        }
+
+        return $produit->fresh('variantes');
+    }
+
+    public function retirerImage(Produit $produit): Produit
+    {
+        $ancien = $produit->image;
+        $produit->forceFill(['image' => null])->save();
+        if ($ancien) {
+            Storage::disk('photos')->delete($ancien);
+        }
+
+        return $produit->fresh('variantes');
+    }
+
     public function supprimer(Produit $produit): void
     {
+        $image = $produit->image;
         $varianteIds = $produit->variantes()->pluck('id');
         if (LigneVente::whereIn('variante_id', $varianteIds)->exists()) {
             throw new RegleMetierException('Ce produit a déjà été vendu. Mettez son stock à zéro plutôt que de le supprimer.');
@@ -119,5 +151,8 @@ class ProduitService
             Variante::whereIn('id', $varianteIds)->delete();
             $produit->delete();
         });
+        if ($image) {
+            Storage::disk('photos')->delete($image); // après la transaction : le fichier n'est perdu que si la suppression a réussi
+        }
     }
 }

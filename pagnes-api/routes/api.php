@@ -36,6 +36,8 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
         Route::post('produits', [ProduitController::class, 'store']);
         Route::put('produits/{produit}', [ProduitController::class, 'update']);
         Route::delete('produits/{produit}', [ProduitController::class, 'destroy']);
+        Route::post('produits/{produit}/image', [ProduitController::class, 'image']);
+        Route::delete('produits/{produit}/image', [ProduitController::class, 'supprimerImage']);
 
         Route::get('fournisseurs', [StatistiqueController::class, 'fournisseurs']);
         Route::post('variantes/{variante}/entree', [VarianteController::class, 'entree']);

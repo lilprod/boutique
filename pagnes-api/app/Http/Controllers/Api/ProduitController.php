@@ -36,7 +36,6 @@ class ProduitController extends Controller
             'type' => 'required|string|max:100',
             'motif' => 'nullable|string|max:100',
             'origine' => 'nullable|string|max:100',
-            'image' => 'nullable|string|max:700000',
             'yards_par_pagne' => 'required|numeric|min:0.01',
             'vend_pagne' => 'required|boolean',
             'vend_yard' => 'required|boolean',
@@ -59,6 +58,32 @@ class ProduitController extends Controller
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    /** Dépose ou remplace la photo (multipart, champ `image`). JPEG, PNG ou WebP : le SVG est refusé (il peut contenir du script). */
+    public function image(Request $request, Produit $produit)
+    {
+        $request->validate(
+            ['image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048', 'dimensions:max_width=4000,max_height=4000']],
+            [
+                'image.required' => 'Choisissez une photo.',
+                'image.uploaded' => 'La photo n\'a pas pu être envoyée (fichier trop lourd pour le serveur).',
+                'image.mimes' => 'La photo doit être au format JPEG, PNG ou WebP.',
+                'image.max' => 'La photo ne doit pas dépasser 2 Mo.',
+                'image.dimensions' => 'La photo est trop grande (4 000 px au plus de chaque côté).',
+            ]
+        );
+
+        try {
+            return response()->json($this->service->definirImage($produit, $request->file('image')));
+        } catch (RegleMetierException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function supprimerImage(Produit $produit)
+    {
+        return response()->json($this->service->retirerImage($produit));
     }
 
     public function destroy(Request $request, Produit $produit)

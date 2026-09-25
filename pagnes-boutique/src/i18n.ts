@@ -45,7 +45,7 @@ const fr: Record<string, string> = {
   'stock.prixYardHint': 'Proposé automatiquement (+20 % par rapport au pagne).', 'stock.prixAchatPagne': "Prix d'achat du pagne (FCFA)", 'stock.variantes': 'Coloris',
   'stock.ajouterColoris': 'Ajouter un coloris', 'stock.couleurs': 'Couleurs', 'stock.couleur1': 'Couleur principale', 'stock.couleur2': "Couleur d'accent", 'stock.sku': 'Référence',
   'stock.skuAuto': 'Automatique', 'stock.seuilYd': 'Seuil (yards)', 'stock.stockInitialYd': 'Stock initial (yards)', 'stock.viaEntree': 'Via « Entrée de stock »',
-  'stock.photo': 'Ajouter une photo', 'stock.retirerPhoto': 'Retirer la photo', 'stock.imageErreur': "Impossible de lire cette image.", 'stock.produitAjoute': 'Produit ajouté.',
+  'stock.photo': 'Ajouter une photo', 'stock.retirerPhoto': 'Retirer la photo', 'stock.imageErreur': "Impossible de lire cette image.", 'stock.photoEchec': 'Produit enregistré, mais la photo a été refusée : {msg}', 'stock.produitAjoute': 'Produit ajouté.',
   'stock.produitModifie': 'Produit modifié.', 'stock.stockActuel': 'stock actuel :', 'stock.unite': 'Unité', 'stock.fournisseur': 'Fournisseur', 'stock.note': 'Note (facultatif)',
   'stock.enregistrerEntree': "Enregistrer l'entrée", 'stock.apercuEntree': 'Ajout de {y} yards. Nouveau stock : {s} yards.', 'stock.entreeOk': '{n} yards ajoutés au stock.',
   'stock.stockCompte': 'Stock compté (yards)', 'stock.motifAjust': "Motif de l'ajustement", 'stock.ecart': 'Écart de {d} yards par rapport au stock enregistré.', 'stock.ajustOk': 'Stock ajusté.',

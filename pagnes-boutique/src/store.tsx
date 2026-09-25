@@ -7,6 +7,7 @@ import { r2 } from './lib/format';
 import { t } from './i18n';
 
 export interface VarForm { id?: string; coloris: string; sku: string; c1: string; c2: string; seuil: number; stock?: number }
+export type PhotoChange = { file: Blob } | { remove: true };
 export interface VenteInput { cart: CartLine[]; clientId?: string; remise: Remise; mode: ModePaiement; reference?: string; recu?: number }
 
 const fail = (error: string): Res<any> => ({ ok: false, error });
@@ -26,7 +27,8 @@ export interface App {
   notice: string | null;
   login: (identifiant: string, mdp: string) => Promise<Res>;
   logout: () => Promise<void>;
-  saveProduit: (p: Produit, vars: VarForm[]) => Promise<Res>;
+  /** `photo` : nouvelle photo à envoyer (`{ file }`) ou retrait de l'actuelle (`{ remove }`) ; absent = inchangée. `data.photoErreur` : produit enregistré mais photo refusée. */
+  saveProduit: (p: Produit, vars: VarForm[], photo?: PhotoChange) => Promise<Res<{ photoErreur?: string }>>;
   deleteProduit: (id: string) => Promise<Res>;
   entreeStock: (i: { varianteId: string; quantite: number; unite: UniteVente; fournisseur: string; prixAchatPagne: number; motif: string }) => Promise<Res>;
   ajusterStock: (i: { varianteId: string; nouveauStock: number; motif: string }) => Promise<Res>;
@@ -154,7 +156,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       clear(); setNotice(null);
     },
 
-    saveProduit: async (p, vars) => {
+    saveProduit: async (p, vars, photo) => {
       if (!p.nom.trim()) return fail(t('err.nomProduit'));
       if (!p.vendPagne && !p.vendYard) return fail(t('err.uniteVente'));
       if (p.yardsParPagne <= 0) return fail(t('err.yardsParPagne'));
@@ -163,8 +165,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const exists = dbRef.current.produits.some(x => x.id === p.id);
       const payload = fromProduit({ ...p, nom: p.nom.trim() }, vars);
       return run(async () => {
-        await (exists ? put(`/produits/${p.id}`, payload) : post('/produits', payload));
+        const saved = await (exists ? put(`/produits/${p.id}`, payload) : post('/produits', payload));
+        // La photo a son propre appel, une fois le produit enregistré (il a alors son identifiant serveur).
+        // Si elle échoue, le produit reste enregistré : on le signale sans le recréer à la validation suivante.
+        let photoErreur: string | undefined;
+        if (photo) {
+          try {
+            if ('remove' in photo) await del(`/produits/${saved.id}/image`);
+            else { const form = new FormData(); form.append('image', photo.file, 'photo.jpg'); await post(`/produits/${saved.id}/image`, form); }
+          } catch (e) {
+            photoErreur = e instanceof ApiError ? e.message : t('err.inattendue');
+          }
+        }
         await load(['produits', 'fournisseurs']);
+        return { photoErreur };
       });
     },
 

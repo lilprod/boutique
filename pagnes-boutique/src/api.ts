@@ -33,11 +33,13 @@ export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   const headers: Record<string, string> = { Accept: 'application/json' };
   const tk = token.get();
   if (tk) headers.Authorization = `Bearer ${tk}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  // FormData (envoi de fichier) : le navigateur fixe lui-même le Content-Type, avec la limite multipart.
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
 
   let res: Response;
   try {
-    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body) });
   } catch {
     throw new ApiError('Serveur injoignable. Vérifiez la connexion.', 0);
   }

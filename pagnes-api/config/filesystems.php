@@ -47,6 +47,16 @@ return [
             'report' => false,
         ],
 
+        // Photos des produits : servies directement par le serveur web depuis public/photos (aucun lien
+        // symbolique à créer). Ce sont des images de catalogue, publiques ; seul l'administrateur en dépose.
+        'photos' => [
+            'driver' => 'local',
+            'root' => public_path('photos'),
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
