@@ -23,7 +23,8 @@ export default function Clients() {
 
   const remove = async (c: Client) => {
     if (!(await confirm({ title: t('clients.supprimerTitre'), message: t('clients.supprimerMsg', { nom: c.nom }), confirmLabel: t('common.supprimer'), danger: true }))) return;
-    deleteClient(c.id); toast(t('clients.supprime'));
+    const r = await deleteClient(c.id);
+    r.ok ? toast(t('clients.supprime')) : toast(r.error!, 'err');
   };
 
   return (

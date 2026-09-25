@@ -80,7 +80,7 @@ class ProduitService
                     $stockInitial = max(0, (float) ($v['stock'] ?? 0));
                     $nouvelle = $produit->variantes()->create([
                         'coloris' => trim($v['coloris']),
-                        'sku' => trim($v['sku'] ?? '') ?: strtoupper(substr($produit->type, 0, 3)) . '-' . $produit->id . '-' . uniqid(),
+                        'sku' => trim($v['sku'] ?? '') ?: $this->skuLibre($produit),
                         'c1' => $v['c1'], 'c2' => $v['c2'], 'seuil' => $v['seuil'] ?? 0, 'stock' => $stockInitial,
                     ]);
                     if ($stockInitial > 0) {
@@ -94,6 +94,18 @@ class ProduitService
 
             return $produit->fresh('variantes');
         });
+    }
+
+    /** Prochain SKU lisible et libre, au format TYPE-PP-NN (ex. WAX-07-02). */
+    private function skuLibre(Produit $produit): string
+    {
+        $prefixe = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', \Illuminate\Support\Str::ascii($produit->type)), 0, 3)) ?: 'ART';
+        for ($n = $produit->variantes()->count() + 1; ; $n++) {
+            $sku = sprintf('%s-%02d-%02d', $prefixe, $produit->id, $n);
+            if (!Variante::where('sku', $sku)->exists()) {
+                return $sku;
+            }
+        }
     }
 
     public function supprimer(Produit $produit): void

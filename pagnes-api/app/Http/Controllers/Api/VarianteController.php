@@ -49,10 +49,11 @@ class VarianteController extends Controller
     /** Historique des mouvements, filtrable par type et par variante (voir onglet « Mouvements »). */
     public function mouvements(Request $request)
     {
-        $q = \App\Models\Mouvement::with('variante.produit', 'utilisateur')->latest()->latest('id');
+        // Ni variante ni produit embarqués (photo comprise) : le frontend les a déjà via /produits.
+        $q = \App\Models\Mouvement::with('utilisateur:id,nom')->latest()->latest('id');
         if ($request->filled('type')) $q->where('type', $request->string('type'));
         if ($request->filled('variante_id')) $q->where('variante_id', $request->integer('variante_id'));
-        $page = $q->paginate(300);
+        $page = $q->paginate(max(1, min(200, $request->integer('per_page', 200))));
         if (!$request->user()->estAdmin()) {
             $page->getCollection()->each->makeHidden('prix_achat_pagne');
         }

@@ -155,7 +155,7 @@ class VenteService
                 $variantes->get($varianteId)->decrement('stock', $yards);
             }
 
-            return $vente->load('lignes', 'client', 'vendeur');
+            return $vente->load('lignes', 'client', 'vendeur:id,nom');
         });
     }
 

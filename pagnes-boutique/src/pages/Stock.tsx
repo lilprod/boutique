@@ -4,7 +4,7 @@ import type { Produit, UniteVente, Variante } from '../types';
 import { useApp, type VarForm } from '../store';
 import { t, uniteLabel } from '../i18n';
 import { Badge, Empty, Field, fileToDataUrl, Modal, NumInput, Segmented, Swatch, useUI } from '../components/ui';
-import { COLORIS, TYPES } from '../data/seed';
+import { COLORIS, TYPES } from '../data/catalogue';
 import { statutStock, yardsOf } from '../lib/calc';
 import { fcfa, fmtDateTime, norm, num, r2, uid } from '../lib/format';
 
@@ -41,7 +41,7 @@ export default function Stock() {
 
   const remove = async (p: Produit) => {
     if (!(await confirm({ title: t('stock.supprimerTitre'), message: t('stock.supprimerMsg', { nom: p.nom }), confirmLabel: t('common.supprimer'), danger: true }))) return;
-    const r = deleteProduit(p.id);
+    const r = await deleteProduit(p.id);
     r.ok ? toast(t('stock.supprime')) : toast(r.error!, 'err');
   };
 
@@ -163,12 +163,15 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
     if (!file) return;
     try { up('image', await fileToDataUrl(file)); } catch { toast(t('stock.imageErreur'), 'err'); }
   };
-  const submit = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     const clean = { ...p, nom: p.nom.trim(), motif: p.motif.trim(), origine: p.origine.trim() };
-    const prefix = clean.type.normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'ART';
-    const withSku = vars.map((v, i) => ({ ...v, sku: v.sku.trim() || `${prefix}-${String(db.produits.length + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}` }));
-    const r = saveProduit(clean, withSku);
+    // SKU laissé vide : le serveur en génère un unique (un SKU calculé ici pourrait entrer en collision).
+    setBusy(true);
+    const r = await saveProduit(clean, vars);
+    setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     toast(existing ? t('stock.produitModifie') : t('stock.produitAjoute'));
     onClose();
@@ -176,7 +179,7 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
 
   return (
     <Modal title={existing ? t('stock.modifierProduit') : t('stock.nouveauProduit')} onClose={onClose} size="lg"
-      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="produit-form" type="submit">{t('common.enregistrer')}</button></>}>
+      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="produit-form" type="submit" disabled={busy}>{t('common.enregistrer')}</button></>}>
       <form id="produit-form" onSubmit={submit} className="form-grid">
         <div className="img-pick span3">
           <Swatch c1={vars[0]?.c1 ?? '#ddd'} c2={vars[0]?.c2 ?? '#999'} seed={p.id} image={p.image} size={96} />
@@ -242,15 +245,19 @@ function EntreeForm({ vid, onClose }: { vid: string; onClose: () => void }) {
   const [motif, setMotif] = useState('');
   const suppliers = [...new Set(db.mouvements.map(m => m.fournisseur).filter(Boolean))] as string[];
   const yards = yardsOf(p, unite, q);
-  const submit = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = entreeStock({ varianteId: vid, quantite: q, unite, fournisseur, prixAchatPagne: prix, motif });
+    if (busy) return;
+    setBusy(true);
+    const r = await entreeStock({ varianteId: vid, quantite: q, unite, fournisseur, prixAchatPagne: prix, motif });
+    setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     toast(t('stock.entreeOk', { n: num(yards) })); onClose();
   };
   return (
     <Modal title={t('stock.entree')} onClose={onClose} size="sm"
-      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="entree-form" type="submit">{t('stock.enregistrerEntree')}</button></>}>
+      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="entree-form" type="submit" disabled={busy}>{t('stock.enregistrerEntree')}</button></>}>
       <form id="entree-form" onSubmit={submit} className="form-col">
         <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} yd</div></div></div>
         <div className="row-2">
@@ -277,15 +284,19 @@ function AjustForm({ vid, onClose }: { vid: string; onClose: () => void }) {
   const [n, setN] = useState(v.stock);
   const [motif, setMotif] = useState('');
   const delta = r2(n - v.stock);
-  const submit = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = ajusterStock({ varianteId: vid, nouveauStock: n, motif });
+    if (busy) return;
+    setBusy(true);
+    const r = await ajusterStock({ varianteId: vid, nouveauStock: n, motif });
+    setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     toast(t('stock.ajustOk')); onClose();
   };
   return (
     <Modal title={t('stock.ajuster')} onClose={onClose} size="sm"
-      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="ajust-form" type="submit">{t('common.enregistrer')}</button></>}>
+      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="ajust-form" type="submit" disabled={busy}>{t('common.enregistrer')}</button></>}>
       <form id="ajust-form" onSubmit={submit} className="form-col">
         <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} yd</div></div></div>
         <Field label={t('stock.stockCompte')}><NumInput label={t('stock.stockCompte')} value={n} onChange={setN} /></Field>

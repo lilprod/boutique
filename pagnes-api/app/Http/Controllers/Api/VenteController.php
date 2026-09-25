@@ -14,12 +14,14 @@ class VenteController extends Controller
 
     public function index(Request $request)
     {
-        $q = Vente::with('lignes', 'client', 'vendeur')->latest()->latest('id'); // id : départage les ventes de la même seconde
+        // `vendeur:id,nom` : jamais l'identifiant de connexion ni le rôle d'un collègue.
+        $q = Vente::with('lignes', 'client', 'vendeur:id,nom')->latest()->latest('id'); // id : départage les ventes de la même seconde
         if (!$request->user()->estAdmin()) {
             $q->where('vendeur_id', $request->user()->id); // un vendeur ne voit que ses propres ventes
         }
         if ($request->filled('statut')) $q->where('statut', $request->string('statut'));
-        $page = $q->paginate(50);
+        // per_page (1-200) : le frontend charge tout l'historique par pages successives.
+        $page = $q->paginate(max(1, min(200, $request->integer('per_page', 50))));
         $page->getCollection()->each(fn (Vente $v) => $this->masquerCouts($v, $request));
         return $page;
     }
@@ -27,7 +29,7 @@ class VenteController extends Controller
     public function show(Request $request, Vente $vente)
     {
         abort_unless($request->user()->estAdmin() || $vente->vendeur_id === $request->user()->id, 403, 'Cette vente ne vous appartient pas.');
-        return $this->masquerCouts($vente->load('lignes.variante', 'client', 'vendeur'), $request);
+        return $this->masquerCouts($vente->load('lignes', 'client', 'vendeur:id,nom'), $request);
     }
 
     /** La marge et le coût d'achat ne sont visibles que de l'administrateur. */

@@ -1,9 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartLine, Client, DB, ModePaiement, Mouvement, Parametres, Produit, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { localRepo as repo } from './repo';
-import { seedDb } from './data/seed';
-import { buildLignes, totaux, yardsOf } from './lib/calc';
-import { numeroVente, r2, uid } from './lib/format';
+import { ApiError, del, get, getAll, post, put, setUnauthorizedHandler, token } from './api';
+import { fromClient, fromParametres, fromProduit, fromUser, fromVente, toClient, toMouvement, toParametres, toProduit, toUser, toUserPartiel, toVariante, toVente } from './lib/mappers';
+import { buildLignes, totaux } from './lib/calc';
+import { r2 } from './lib/format';
 import { t } from './i18n';
 
 export interface VarForm { id?: string; coloris: string; sku: string; c1: string; c2: string; seuil: number; stock?: number }
@@ -12,22 +12,30 @@ export interface VenteInput { cart: CartLine[]; clientId?: string; remise: Remis
 const fail = (error: string): Res<any> => ({ ok: false, error });
 const good = <T,>(data?: T): Res<T> => ({ ok: true, data });
 
+/** Exécute un appel API et le convertit en `Res` : les pages affichent `error` tel quel (message français du serveur). */
+async function run<T>(fn: () => Promise<T>): Promise<Res<T>> {
+  try { return good(await fn()); } catch (e) { return fail(e instanceof ApiError ? e.message : t('err.inattendue')); }
+}
+
 export interface App {
   db: DB;
   user: User | null;
-  login: (identifiant: string, mdp: string) => boolean;
-  logout: () => void;
-  saveProduit: (p: Produit, vars: VarForm[]) => Res;
-  deleteProduit: (id: string) => Res;
-  entreeStock: (i: { varianteId: string; quantite: number; unite: UniteVente; fournisseur: string; prixAchatPagne: number; motif: string }) => Res;
-  ajusterStock: (i: { varianteId: string; nouveauStock: number; motif: string }) => Res;
-  validerVente: (i: VenteInput) => Res<Vente>;
-  annulerVente: (id: string, motif: string) => Res;
-  saveClient: (c: Client) => Res;
-  deleteClient: (id: string) => Res;
-  saveParametres: (p: Parametres) => void;
-  saveUser: (u: User) => Res;
-  resetDemo: () => void;
+  /** false tant que la session et les données initiales se chargent. */
+  ready: boolean;
+  /** Message à afficher sur l'écran de connexion (session expirée, serveur injoignable…). */
+  notice: string | null;
+  login: (identifiant: string, mdp: string) => Promise<Res>;
+  logout: () => Promise<void>;
+  saveProduit: (p: Produit, vars: VarForm[]) => Promise<Res>;
+  deleteProduit: (id: string) => Promise<Res>;
+  entreeStock: (i: { varianteId: string; quantite: number; unite: UniteVente; fournisseur: string; prixAchatPagne: number; motif: string }) => Promise<Res>;
+  ajusterStock: (i: { varianteId: string; nouveauStock: number; motif: string }) => Promise<Res>;
+  validerVente: (i: VenteInput) => Promise<Res<Vente>>;
+  annulerVente: (id: string, motif: string) => Promise<Res>;
+  saveClient: (c: Client) => Promise<Res<Client>>;
+  deleteClient: (id: string) => Promise<Res>;
+  saveParametres: (p: Parametres) => Promise<Res>;
+  saveUser: (u: User) => Promise<Res>;
 }
 
 const Ctx = createContext<App | null>(null);
@@ -37,184 +45,211 @@ export const useApp = () => {
   return c;
 };
 
+type Part = 'produits' | 'clients' | 'ventes' | 'mouvements' | 'parametres' | 'users';
+const ALL: Part[] = ['produits', 'clients', 'ventes', 'mouvements', 'parametres', 'users'];
+
+interface Data {
+  produits: Produit[]; variantes: Variante[]; clients: Client[]; ventes: Vente[]; mouvements: Mouvement[];
+  parametres: Parametres;
+  /** Liste complète des comptes : réservée à l'administrateur. */
+  comptes: User[] | null;
+  /** Noms connus (id → nom), lus dans les ventes et mouvements : un vendeur n'a pas accès à la liste des comptes. */
+  noms: Record<string, string>;
+}
+const EMPTY: Data = {
+  produits: [], variantes: [], clients: [], ventes: [], mouvements: [], comptes: null, noms: {},
+  parametres: { boutique: 'Pagnes de Lomé', adresse: '', telephone: '', ticketFormat: '80mm', remiseMaxVendeur: 15, messageTicket: '' },
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [db, setDb] = useState<DB>(() => repo.load() ?? seedDb());
-  const dbRef = useRef(db);
-  const [userId, setUserId] = useState<string | null>(() => repo.loadSession());
-
-  useEffect(() => { repo.save(db); }, [db]);
-  useEffect(() => { repo.saveSession(userId); }, [userId]);
-
-  const user = useMemo(() => db.users.find(u => u.id === userId && u.actif) ?? null, [db.users, userId]);
+  const [data, setData] = useState<Data>(EMPTY);
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const userRef = useRef(user);
   userRef.current = user;
 
-  /** Applique une transformation synchrone sur la base et renvoie son résultat. */
-  const commit = useCallback(<R,>(fn: (d: DB) => { db: DB; res: R }): R => {
-    const out = fn(dbRef.current);
-    dbRef.current = out.db;
-    setDb(out.db);
-    return out.res;
+  const db = useMemo<DB>(() => {
+    const users = data.comptes ?? [...new Set([...Object.keys(data.noms), ...(user ? [user.id] : [])])]
+      .map(id => (user && id === user.id ? user : toUserPartiel({ id, nom: data.noms[id] })));
+    return { produits: data.produits, variantes: data.variantes, clients: data.clients, ventes: data.ventes, mouvements: data.mouvements, users, parametres: data.parametres, prochainNumero: 0 };
+  }, [data, user]);
+  const dbRef = useRef(db);
+  dbRef.current = db;
+
+  /** (Re)charge une partie des données depuis l'API. Un vendeur ne charge pas la liste des comptes. */
+  const load = useCallback(async (parts: Part[], role?: Role) => {
+    const want = new Set(parts);
+    const admin = (role ?? userRef.current?.role) === 'admin';
+    const [produits, clients, ventes, mouvements, parametres, comptes] = await Promise.all([
+      want.has('produits') ? get<any[]>('/produits') : null,
+      want.has('clients') ? get<any[]>('/clients') : null,
+      want.has('ventes') ? getAll('/ventes') : null,
+      want.has('mouvements') ? getAll('/mouvements') : null,
+      want.has('parametres') ? get('/parametres') : null,
+      want.has('users') && admin ? get<any[]>('/users') : null,
+    ]);
+    setData(prev => {
+      const noms = { ...prev.noms };
+      ventes?.forEach(v => { if (v.vendeur) noms[String(v.vendeur.id)] = v.vendeur.nom; });
+      mouvements?.forEach(m => { if (m.utilisateur) noms[String(m.utilisateur.id)] = m.utilisateur.nom; });
+      return {
+        produits: produits ? produits.map(toProduit) : prev.produits,
+        variantes: produits ? produits.flatMap(p => (p.variantes ?? []).map(toVariante)) : prev.variantes,
+        clients: clients ? clients.map(toClient) : prev.clients,
+        ventes: ventes ? ventes.map(toVente) : prev.ventes,
+        mouvements: mouvements ? mouvements.map(toMouvement) : prev.mouvements,
+        parametres: parametres ? toParametres(parametres) : prev.parametres,
+        comptes: comptes ? comptes.map(toUser) : prev.comptes,
+        noms,
+      };
+    });
   }, []);
-  const uidNow = () => userRef.current?.id ?? 'u_admin';
 
+  const clear = useCallback(() => { token.set(null); setUser(null); setData(EMPTY); }, []);
 
-  const api: App = {
-    db,
-    user,
-    login: (identifiant, mdp) => {
-      const u = dbRef.current.users.find(x => x.identifiant.toLowerCase() === identifiant.trim().toLowerCase() && x.motDePasse === mdp && x.actif);
-      if (u) setUserId(u.id);
-      return !!u;
-    },
-    logout: () => setUserId(null),
+  /** Ouvre la session : charge tout, ou renvoie à la connexion si le chargement échoue. */
+  const start = useCallback(async (u: User): Promise<Res> => {
+    try {
+      setUser(u);
+      await load(ALL, u.role);
+      setNotice(null);
+      return good();
+    } catch (e) {
+      clear();
+      return fail(e instanceof ApiError ? e.message : t('err.inattendue'));
+    }
+  }, [load, clear]);
 
-    saveProduit: (p, vars) => commit(d => {
-      const bad = (m: string) => ({ db: d, res: fail(m) });
-      if (!p.nom.trim()) return bad(t('err.nomProduit'));
-      if (!p.vendPagne && !p.vendYard) return bad(t('err.uniteVente'));
-      if (p.yardsParPagne <= 0) return bad(t('err.yardsParPagne'));
-      if ((p.vendPagne && p.prixPagne <= 0) || (p.vendYard && p.prixYard <= 0)) return bad(t('err.prix'));
-      if (vars.length === 0 || vars.some(v => !v.coloris.trim())) return bad(t('err.coloris'));
-      const keep = new Set(vars.filter(v => v.id).map(v => v.id));
-      for (const r of d.variantes.filter(v => v.produitId === p.id && !keep.has(v.id))) {
-        if (d.ventes.some(s => s.lignes.some(l => l.varianteId === r.id))) return bad(t('err.colorisVendu', { coloris: r.coloris }));
-      }
-      const exists = d.produits.some(x => x.id === p.id);
-      const produits = exists ? d.produits.map(x => (x.id === p.id ? p : x)) : [...d.produits, p];
-      const removedIds = new Set(d.variantes.filter(v => v.produitId === p.id && !keep.has(v.id)).map(v => v.id));
-      let variantes = d.variantes.filter(v => !removedIds.has(v.id));
-      let mouvements = d.mouvements.filter(m => !removedIds.has(m.varianteId));
-      const now = new Date().toISOString();
-      for (const f of vars) {
-        if (f.id) {
-          variantes = variantes.map(v => (v.id === f.id ? { ...v, coloris: f.coloris.trim(), sku: f.sku.trim(), c1: f.c1, c2: f.c2, seuil: f.seuil } : v));
-        } else {
-          const nv: Variante = { id: uid('v_'), produitId: p.id, coloris: f.coloris.trim(), sku: f.sku.trim(), c1: f.c1, c2: f.c2, stock: r2(Math.max(0, f.stock || 0)), seuil: f.seuil };
-          variantes = [...variantes, nv];
-          if (nv.stock > 0) {
-            mouvements = [...mouvements, { id: uid('m_'), date: now, varianteId: nv.id, type: 'entree', yards: nv.stock, userId: uidNow(), motif: t('stock.stockInitial'), prixAchatPagne: p.prixAchatPagne } as Mouvement];
-          }
+  // Jeton expiré ou compte désactivé : retour à la connexion, sans laisser de données affichées.
+  useEffect(() => { setUnauthorizedHandler(() => { clear(); setNotice(t('err.session')); }); }, [clear]);
+
+  // Au démarrage : reprend la session si un jeton est présent.
+  useEffect(() => {
+    (async () => {
+      if (token.get()) {
+        try {
+          const me = await get<{ id: number; nom: string; role: Role }>('/me');
+          const r = await start({ id: String(me.id), nom: me.nom, identifiant: '', motDePasse: '', role: me.role, actif: true });
+          if (!r.ok) setNotice(r.error!);
+        } catch (e) {
+          // Serveur injoignable : on garde le jeton pour la prochaine tentative ; sinon (401…) `request` l'a déjà effacé.
+          if (e instanceof ApiError && e.status === 0) setNotice(e.message); else token.set(null);
         }
       }
-      return { db: { ...d, produits, variantes, mouvements }, res: good() };
-    }),
+      setReady(true);
+    })();
+  }, [start]);
 
-    deleteProduit: id => commit(d => {
-      const ids = new Set(d.variantes.filter(v => v.produitId === id).map(v => v.id));
-      if (d.ventes.some(s => s.lignes.some(l => l.produitId === id))) return { db: d, res: fail(t('err.produitVendu')) };
-      return {
-        db: { ...d, produits: d.produits.filter(p => p.id !== id), variantes: d.variantes.filter(v => !ids.has(v.id)), mouvements: d.mouvements.filter(m => !ids.has(m.varianteId)) },
-        res: good(),
-      };
-    }),
+  const api: App = {
+    db, user, ready, notice,
 
-    entreeStock: i => commit(d => {
-      const v = d.variantes.find(x => x.id === i.varianteId);
-      const p = v && d.produits.find(x => x.id === v.produitId);
-      if (!v || !p) return { db: d, res: fail(t('err.introuvable')) };
-      if (!(i.quantite > 0)) return { db: d, res: fail(t('err.quantite')) };
-      const yards = yardsOf(p, i.unite, i.quantite);
-      const mvt: Mouvement = {
-        id: uid('m_'), date: new Date().toISOString(), varianteId: v.id, type: 'entree', yards, userId: uidNow(),
-        motif: i.motif.trim() || t('stock.reapprovisionnement'), fournisseur: i.fournisseur.trim() || undefined, prixAchatPagne: i.prixAchatPagne > 0 ? i.prixAchatPagne : undefined,
-      };
-      return {
-        db: {
-          ...d,
-          variantes: d.variantes.map(x => (x.id === v.id ? { ...x, stock: r2(x.stock + yards) } : x)),
-          produits: i.prixAchatPagne > 0 ? d.produits.map(x => (x.id === p.id ? { ...x, prixAchatPagne: i.prixAchatPagne } : x)) : d.produits,
-          mouvements: [...d.mouvements, mvt],
-        },
-        res: good(),
-      };
-    }),
+    login: async (identifiant, mdp) => {
+      try {
+        const r = await post<{ user: { id: number; nom: string; role: Role }; token: string }>('/login', { identifiant: identifiant.trim(), mot_de_passe: mdp });
+        token.set(r.token);
+        return await start({ id: String(r.user.id), nom: r.user.nom, identifiant: identifiant.trim(), motDePasse: '', role: r.user.role, actif: true });
+      } catch (e) {
+        return fail(e instanceof ApiError ? e.message : t('err.inattendue'));
+      }
+    },
 
-    ajusterStock: i => commit(d => {
-      const v = d.variantes.find(x => x.id === i.varianteId);
-      if (!v) return { db: d, res: fail(t('err.introuvable')) };
-      if (i.nouveauStock < 0) return { db: d, res: fail(t('err.quantite')) };
-      if (!i.motif.trim()) return { db: d, res: fail(t('err.motifRequis')) };
-      const delta = r2(i.nouveauStock - v.stock);
-      if (delta === 0) return { db: d, res: fail(t('err.aucunEcart')) };
-      const mvt: Mouvement = { id: uid('m_'), date: new Date().toISOString(), varianteId: v.id, type: 'ajustement', yards: delta, userId: uidNow(), motif: i.motif.trim() };
-      return { db: { ...d, variantes: d.variantes.map(x => (x.id === v.id ? { ...x, stock: r2(i.nouveauStock) } : x)), mouvements: [...d.mouvements, mvt] }, res: good() };
-    }),
+    logout: async () => {
+      try { await post('/logout'); } catch { /* jeton déjà invalide ou serveur injoignable : on déconnecte quand même */ }
+      clear(); setNotice(null);
+    },
 
-    validerVente: i => commit(d => {
-      const bad = (m: string) => ({ db: d, res: fail(m) as Res<Vente> });
-      const u = userRef.current;
-      if (!u) return bad(t('err.session'));
-      if (i.cart.length === 0) return bad(t('err.panierVide'));
-      if (i.cart.some(c => !(c.quantite > 0))) return bad(t('err.quantite'));
+    saveProduit: async (p, vars) => {
+      if (!p.nom.trim()) return fail(t('err.nomProduit'));
+      if (!p.vendPagne && !p.vendYard) return fail(t('err.uniteVente'));
+      if (p.yardsParPagne <= 0) return fail(t('err.yardsParPagne'));
+      if ((p.vendPagne && p.prixPagne <= 0) || (p.vendYard && p.prixYard <= 0)) return fail(t('err.prix'));
+      if (vars.length === 0 || vars.some(v => !v.coloris.trim())) return fail(t('err.coloris'));
+      const exists = dbRef.current.produits.some(x => x.id === p.id);
+      const payload = fromProduit({ ...p, nom: p.nom.trim() }, vars);
+      return run(async () => {
+        await (exists ? put(`/produits/${p.id}`, payload) : post('/produits', payload));
+        await load(['produits', 'mouvements']);
+      });
+    },
+
+    deleteProduit: id => run(async () => { await del(`/produits/${id}`); await load(['produits', 'mouvements']); }),
+
+    entreeStock: async i => {
+      if (!(i.quantite > 0)) return fail(t('err.quantite'));
+      return run(async () => {
+        await post(`/variantes/${i.varianteId}/entree`, {
+          unite: i.unite, quantite: i.quantite, fournisseur: i.fournisseur.trim() || null,
+          prix_achat_pagne: i.prixAchatPagne > 0 ? Math.round(i.prixAchatPagne) : null, motif: i.motif.trim() || null,
+        });
+        await load(['produits', 'mouvements']);
+      });
+    },
+
+    ajusterStock: async i => {
+      const v = dbRef.current.variantes.find(x => x.id === i.varianteId);
+      if (!v) return fail(t('err.introuvable'));
+      if (i.nouveauStock < 0) return fail(t('err.quantite'));
+      if (!i.motif.trim()) return fail(t('err.motifRequis'));
+      if (r2(i.nouveauStock - v.stock) === 0) return fail(t('err.aucunEcart'));
+      return run(async () => {
+        await post(`/variantes/${i.varianteId}/ajuster`, { nouveau_stock: i.nouveauStock, motif: i.motif.trim() });
+        await load(['produits', 'mouvements']);
+      });
+    },
+
+    validerVente: async i => {
+      const d = dbRef.current;
+      if (!userRef.current) return fail(t('err.session'));
+      if (i.cart.length === 0) return fail(t('err.panierVide'));
+      if (i.cart.some(c => !(c.quantite > 0))) return fail(t('err.quantite'));
       const need = new Map<string, number>();
       const lignes = buildLignes(d.produits, d.variantes, i.cart);
       for (const l of lignes) need.set(l.varianteId, r2((need.get(l.varianteId) || 0) + l.yards));
       for (const [vid, y] of need) {
         const v = d.variantes.find(x => x.id === vid)!;
-        if (y > v.stock) return bad(t('err.stockInsuffisant', { nom: lignes.find(l => l.varianteId === vid)!.libelle, coloris: v.coloris, stock: String(v.stock) }));
+        if (y > v.stock) return fail(t('err.stockInsuffisant', { nom: lignes.find(l => l.varianteId === vid)!.libelle, coloris: v.coloris, stock: String(v.stock) }));
       }
       const tot = totaux(lignes, i.remise);
-      if (u.role !== 'admin' && tot.remiseEffPct > d.parametres.remiseMaxVendeur + 0.001) return bad(t('err.remiseMax', { max: String(d.parametres.remiseMaxVendeur) }));
-      if ((i.mode === 'flooz' || i.mode === 'tmoney') && !(i.reference || '').trim()) return bad(t('err.reference'));
-      if (i.mode === 'especes' && i.recu && i.recu > 0 && i.recu < tot.total) return bad(t('err.recuInsuffisant'));
-      const numero = d.prochainNumero;
-      const date = new Date().toISOString();
-      const vente: Vente = {
-        id: uid('s_'), numero, date, vendeurId: u.id, clientId: i.clientId || undefined, lignes, sousTotal: tot.sousTotal, remise: i.remise,
-        remiseMontant: tot.remiseMontant, total: tot.total, marge: tot.marge,
-        paiement: { mode: i.mode, reference: i.reference?.trim() || undefined, recu: i.mode === 'especes' && i.recu && i.recu > 0 ? i.recu : undefined },
-        statut: 'validee',
-      };
-      const mvts: Mouvement[] = lignes.map(l => ({ id: uid('m_'), date, varianteId: l.varianteId, type: 'vente', yards: -l.yards, userId: u.id, motif: t('stock.motifVente', { n: numeroVente(numero) }), venteId: vente.id }));
-      return {
-        db: {
-          ...d, ventes: [...d.ventes, vente], prochainNumero: numero + 1, mouvements: [...d.mouvements, ...mvts],
-          variantes: d.variantes.map(v => (need.has(v.id) ? { ...v, stock: r2(v.stock - need.get(v.id)!) } : v)),
-        },
-        res: good(vente),
-      };
-    }),
+      if (userRef.current.role !== 'admin' && tot.remiseEffPct > d.parametres.remiseMaxVendeur + 0.001) return fail(t('err.remiseMax', { max: String(d.parametres.remiseMaxVendeur) }));
+      if ((i.mode === 'flooz' || i.mode === 'tmoney') && !(i.reference || '').trim()) return fail(t('err.reference'));
+      if (i.mode === 'especes' && i.recu && i.recu > 0 && i.recu < tot.total) return fail(t('err.recuInsuffisant'));
+      return run(async () => {
+        // La vente est validée par le serveur (stock, remise, numéro) : c'est lui qui fait foi, pas ce calcul.
+        const vente = toVente(await post('/ventes', fromVente(i)));
+        await load(['produits', 'ventes', 'mouvements']);
+        return vente;
+      });
+    },
 
-    annulerVente: (id, motif) => commit(d => {
-      const v = d.ventes.find(x => x.id === id);
-      if (!v) return { db: d, res: fail(t('err.introuvable')) };
-      if (v.statut === 'annulee') return { db: d, res: fail(t('err.dejaAnnulee')) };
-      if (!motif.trim()) return { db: d, res: fail(t('err.motifRequis')) };
-      const date = new Date().toISOString();
-      const back = new Map<string, number>();
-      v.lignes.forEach(l => back.set(l.varianteId, r2((back.get(l.varianteId) || 0) + l.yards)));
-      const mvts: Mouvement[] = v.lignes.map(l => ({ id: uid('m_'), date, varianteId: l.varianteId, type: 'annulation', yards: l.yards, userId: uidNow(), motif: t('stock.motifAnnulation', { n: numeroVente(v.numero) }), venteId: v.id }));
-      return {
-        db: {
-          ...d,
-          ventes: d.ventes.map(x => (x.id === id ? { ...x, statut: 'annulee', annulation: { date, userId: uidNow(), motif: motif.trim() } } : x)),
-          variantes: d.variantes.map(x => (back.has(x.id) ? { ...x, stock: r2(x.stock + back.get(x.id)!) } : x)),
-          mouvements: [...d.mouvements, ...mvts],
-        },
-        res: good(),
-      };
-    }),
+    annulerVente: async (id, motif) => {
+      if (!motif.trim()) return fail(t('err.motifRequis'));
+      return run(async () => { await post(`/ventes/${id}/annuler`, { motif: motif.trim() }); await load(['ventes', 'produits', 'mouvements']); });
+    },
 
-    saveClient: c => commit(d => {
-      if (!c.nom.trim()) return { db: d, res: fail(t('err.nomClient')) };
-      const exists = d.clients.some(x => x.id === c.id);
-      return { db: { ...d, clients: exists ? d.clients.map(x => (x.id === c.id ? c : x)) : [...d.clients, c] }, res: good() };
-    }),
-    deleteClient: id => commit(d => ({ db: { ...d, clients: d.clients.filter(c => c.id !== id), ventes: d.ventes.map(v => (v.clientId === id ? { ...v, clientId: undefined } : v)) }, res: good() })),
+    saveClient: async c => {
+      if (!c.nom.trim()) return fail(t('err.nomClient'));
+      const exists = dbRef.current.clients.some(x => x.id === c.id);
+      return run(async () => {
+        const saved = toClient(await (exists ? put(`/clients/${c.id}`, fromClient(c)) : post('/clients', fromClient(c))));
+        await load(['clients']);
+        return saved; // porte l'identifiant attribué par le serveur (la caisse s'en sert pour sélectionner le nouveau client)
+      });
+    },
 
-    saveParametres: p => commit(d => ({ db: { ...d, parametres: p }, res: 0 })) as unknown as void,
+    deleteClient: id => run(async () => { await del(`/clients/${id}`); await load(['clients', 'ventes']); }),
 
-    saveUser: u => commit(d => {
-      if (!u.nom.trim() || !u.identifiant.trim() || !u.motDePasse.trim()) return { db: d, res: fail(t('err.champsUtilisateur')) };
-      if (d.users.some(x => x.id !== u.id && x.identifiant.toLowerCase() === u.identifiant.trim().toLowerCase())) return { db: d, res: fail(t('err.identifiantPris')) };
-      if (u.role !== ('admin' as Role) && d.users.filter(x => x.role === 'admin' && x.actif && x.id !== u.id).length === 0 && d.users.some(x => x.id === u.id && x.role === 'admin')) return { db: d, res: fail(t('err.dernierAdmin')) };
-      if (!u.actif && d.users.filter(x => x.role === 'admin' && x.actif && x.id !== u.id).length === 0 && u.role === 'admin') return { db: d, res: fail(t('err.dernierAdmin')) };
-      const exists = d.users.some(x => x.id === u.id);
-      return { db: { ...d, users: exists ? d.users.map(x => (x.id === u.id ? u : x)) : [...d.users, u] }, res: good() };
-    }),
+    saveParametres: async p => run(async () => { await put('/parametres', fromParametres(p)); await load(['parametres']); }),
 
-    resetDemo: () => { const n = seedDb(); dbRef.current = n; setDb(n); },
+    saveUser: async u => {
+      const exists = dbRef.current.users.some(x => x.id === u.id);
+      if (!u.nom.trim() || !u.identifiant.trim() || (!exists && !u.motDePasse.trim())) return fail(t('err.champsUtilisateur'));
+      if (u.motDePasse.trim() && u.motDePasse.trim().length < 6) return fail(t('err.mdpCourt'));
+      return run(async () => {
+        await (exists ? put(`/users/${u.id}`, fromUser(u)) : post('/users', fromUser(u)));
+        await load(['users']);
+      });
+    },
   };
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

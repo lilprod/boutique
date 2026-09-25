@@ -36,7 +36,7 @@ class ProduitController extends Controller
             'type' => 'required|string|max:100',
             'motif' => 'nullable|string|max:100',
             'origine' => 'nullable|string|max:100',
-            'image' => 'nullable|string',
+            'image' => 'nullable|string|max:700000',
             'yards_par_pagne' => 'required|numeric|min:0.01',
             'vend_pagne' => 'required|boolean',
             'vend_yard' => 'required|boolean',

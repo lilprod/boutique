@@ -13,7 +13,9 @@ return new class extends Migration {
             $table->string('type');
             $table->string('motif')->nullable();
             $table->string('origine')->nullable();
-            $table->string('image')->nullable(); // chemin de stockage, pas le binaire
+            // Le frontend envoie la photo (réduite à 360 px) sous forme de data URL : ~30-100 Ko de texte.
+            // À remplacer par un chemin de fichier (Storage) si le catalogue grossit.
+            $table->mediumText('image')->nullable();
             $table->decimal('yards_par_pagne', 6, 2);
             $table->boolean('vend_pagne')->default(true);
             $table->boolean('vend_yard')->default(true);

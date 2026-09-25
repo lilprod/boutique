@@ -29,6 +29,7 @@ export default function Caisse() {
   const [reference, setReference] = useState('');
   const [recu, setRecu] = useState(0);
   const [done, setDone] = useState<Vente | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const types = [...new Set(db.produits.map(p => p.type))].sort((a, b) => a.localeCompare(b, 'fr'));
   const tiles = useMemo(() => db.variantes.map(v => ({ v, p: db.produits.find(p => p.id === v.produitId)! })).filter(r => r.p)
@@ -59,8 +60,11 @@ export default function Caisse() {
   const cartOk = cart.length > 0 && cart.every(c => c.quantite > 0);
   const rendu = mode === 'especes' && recu >= tot.total && tot.total > 0 ? recu - tot.total : 0;
 
-  const submit = () => {
-    const r = validerVente({ cart, clientId: clientId || undefined, remise, mode, reference, recu });
+  const submit = async () => {
+    if (busy) return; // une seule vente à la fois : un double clic ne doit jamais créer deux ventes
+    setBusy(true);
+    const r = await validerVente({ cart, clientId: clientId || undefined, remise, mode, reference, recu });
+    setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     setDone(r.data!);
     setCart([]); setRemise(ZERO); setClientId(''); setClientQ(''); setReference(''); setRecu(0); setMode('especes');
@@ -187,7 +191,7 @@ export default function Caisse() {
             {admin && cart.length > 0 && <div className="muted-s"><dt>{t('caisse.marge')}</dt><dd>{fcfa(tot.marge)}</dd></div>}
           </dl>
           {problems.length > 0 && <ul className="problems" role="alert">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
-          <button className="btn btn-primary btn-block btn-lg" disabled={!cartOk || problems.length > 0} onClick={submit}><LuCheck /> {t('caisse.valider')} {tot.total > 0 && `· ${fcfa(tot.total)}`}</button>
+          <button className="btn btn-primary btn-block btn-lg" disabled={!cartOk || problems.length > 0 || busy} onClick={submit}><LuCheck /> {t('caisse.valider')} {tot.total > 0 && `· ${fcfa(tot.total)}`}</button>
           </div>
         </aside>
       </div>

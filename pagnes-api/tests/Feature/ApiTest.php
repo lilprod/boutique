@@ -216,6 +216,19 @@ class ApiTest extends TestCase
     }
 
     /** Un coloris jamais vendu a pourtant un mouvement « stock initial » : sa suppression faisait un 500 (FK). */
+    public function test_sku_genere_lisible_et_unique(): void
+    {
+        $p = $this->produit(['variantes' => [
+            ['coloris' => 'A', 'c1' => '#000000', 'c2' => '#FFFFFF', 'seuil' => 1],
+            ['coloris' => 'B', 'c1' => '#000000', 'c2' => '#FFFFFF', 'seuil' => 1],
+        ]]);
+        $skus = array_column($p['variantes'], 'sku');
+        foreach ($skus as $sku) {
+            $this->assertMatchesRegularExpression('/^WAX-\d{2}-\d{2}$/', $sku);
+        }
+        $this->assertCount(2, array_unique($skus));
+    }
+
     public function test_supprimer_un_coloris_jamais_vendu_fonctionne(): void
     {
         $p = $this->produit();
@@ -278,6 +291,60 @@ class ApiTest extends TestCase
         $this->postJson("/api/variantes/{$vid}/ajuster", ['nouveau_stock' => 100, 'motif' => 'Coupes abîmées'])->assertOk();
         $this->assertEquals(100, Variante::find($vid)->stock);
         $this->assertEquals(-12, Mouvement::where('type', 'ajustement')->value('yards'));
+    }
+
+    /** Le frontend envoie la photo en data URL (bien plus de 255 caractères). */
+    public function test_photo_produit_en_data_url_acceptee(): void
+    {
+        $image = 'data:image/jpeg;base64,' . str_repeat('A', 120000);
+        $p = $this->produit(['image' => $image]);
+        $this->assertSame(strlen($image), strlen($p['image']));
+    }
+
+    /** Un vendeur ne doit voir ni l'identifiant de connexion ni le rôle des collègues dans les ventes. */
+    public function test_ventes_n_exposent_que_id_et_nom_du_vendeur(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $cree = $this->vente($this->vendeur, $vid)->assertCreated()->json();
+        $this->assertSame(['id', 'nom'], array_keys($cree['vendeur']));
+
+        Sanctum::actingAs($this->admin);
+        $liste = $this->getJson('/api/ventes')->assertOk()->json('data.0');
+        $this->assertSame(['id', 'nom'], array_keys($liste['vendeur']));
+    }
+
+    public function test_pagination_par_per_page_et_mouvements_allegés(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        foreach ([1, 2, 3] as $i) {
+            $this->vente($this->admin, $vid)->assertCreated();
+        }
+        Sanctum::actingAs($this->admin);
+        $r = $this->getJson('/api/ventes?per_page=2')->assertOk();
+        $this->assertCount(2, $r->json('data'));
+        $this->assertSame(2, $r->json('last_page'));
+        $this->assertCount(3, $this->getJson('/api/ventes?per_page=9999')->json('data')); // plafonné à 200, ici 3 ventes
+
+        $m = $this->getJson('/api/mouvements')->assertOk()->json('data.0');
+        $this->assertArrayNotHasKey('variante', $m);
+        $this->assertSame(['id', 'nom'], array_keys($m['utilisateur']));
+    }
+
+    public function test_cors_autorise_le_frontend_et_refuse_les_autres_origines(): void
+    {
+        $prevol = fn (string $origine) => $this->call('OPTIONS', '/api/produits', [], [], [], [
+            'HTTP_ORIGIN' => $origine, 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET', 'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'authorization',
+        ]);
+
+        $this->assertSame('http://localhost:5173', $prevol('http://localhost:5173')->headers->get('Access-Control-Allow-Origin'));
+        $this->assertNull($prevol('https://site-malveillant.example')->headers->get('Access-Control-Allow-Origin'));
+    }
+
+    public function test_identifiant_en_doublon_refuse_en_francais(): void
+    {
+        Sanctum::actingAs($this->admin);
+        $this->postJson('/api/users', ['nom' => 'Autre', 'email' => 'yawovi', 'mot_de_passe' => 'secret123', 'role' => 'vendeur', 'actif' => true])
+            ->assertStatus(422)->assertJsonPath('errors.email.0', 'Cet identifiant est déjà utilisé.');
     }
 
     public function test_dernier_administrateur_actif_est_protege(): void

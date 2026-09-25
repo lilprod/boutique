@@ -55,7 +55,7 @@ function Layout() {
         </nav>
         <div className="side-foot">
           <div className="me"><span className="me-name">{user!.nom}</span><span className="me-role">{t('role.' + user!.role)}</span></div>
-          <button className="nav-link" onClick={logout} title={t('nav.deconnexion')}><LuLogOut /><span>{t('nav.deconnexion')}</span></button>
+          <button className="nav-link" onClick={() => { void logout(); }} title={t('nav.deconnexion')}><LuLogOut /><span>{t('nav.deconnexion')}</span></button>
           <button className="nav-link" onClick={() => setCollapsed(c => !c)} aria-label={collapsed ? t('nav.deplier') : t('nav.replier')}>{collapsed ? <LuChevronsRight /> : <LuChevronsLeft />}<span>{t('nav.replier')}</span></button>
         </div>
       </aside>
@@ -65,7 +65,8 @@ function Layout() {
 }
 
 function Gate() {
-  const { user } = useApp();
+  const { user, ready } = useApp();
+  if (!ready) return <div className="login-main" role="status" aria-live="polite"><p className="muted-p">{t('app.chargement')}</p></div>;
   return user ? <Layout /> : <Login />;
 }
 

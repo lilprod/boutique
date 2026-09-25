@@ -41,4 +41,4 @@ export interface DB {
 }
 
 export interface CartLine { varianteId: string; unite: UniteVente; quantite: number; remise: Remise }
-export interface Res<T = undefined> { ok: boolean; error?: string; data?: T }
+export interface Res<T = void> { ok: boolean; error?: string; data?: T }

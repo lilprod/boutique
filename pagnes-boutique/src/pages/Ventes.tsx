@@ -27,8 +27,12 @@ export default function Ventes() {
     .sort((a, b) => b.date.localeCompare(a.date)), [db, q, statut, admin, user]);
 
   const vente = db.ventes.find(v => v.id === sel);
-  const doCancel = () => {
-    const r = annulerVente(sel!, motif);
+  const [busy, setBusy] = useState(false);
+  const doCancel = async () => {
+    if (busy) return;
+    setBusy(true);
+    const r = await annulerVente(sel!, motif);
+    setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     toast(t('ventes.annuleeOk')); setCancel(false); setMotif('');
   };
@@ -69,7 +73,7 @@ export default function Ventes() {
       )}
       {vente && cancel && (
         <Modal title={t('ventes.annulerTitre', { n: numeroVente(vente.numero) })} size="sm" onClose={() => setCancel(false)}
-          footer={<><button className="btn" onClick={() => setCancel(false)}>{t('common.annuler')}</button><button className="btn btn-danger" onClick={doCancel}>{t('ventes.confirmerAnnulation')}</button></>}>
+          footer={<><button className="btn" onClick={() => setCancel(false)}>{t('common.annuler')}</button><button className="btn btn-danger" onClick={doCancel} disabled={busy}>{t('ventes.confirmerAnnulation')}</button></>}>
           <p className="muted-p">{t('ventes.annulerMsg')}</p>
           <Field label={t('ventes.motif')}><input className="input" value={motif} onChange={e => setMotif(e.target.value)} autoFocus /></Field>
         </Modal>

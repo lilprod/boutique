@@ -11,6 +11,15 @@ use Illuminate\Support\Facades\Hash;
 /** Gestion des comptes vendeur/administrateur — réservé à l'administrateur. */
 class UserController extends Controller
 {
+    /** Messages affichés tels quels par le frontend : en français, avec le vocabulaire de l'interface. */
+    private const MESSAGES = [
+        'nom.required' => 'Le nom est obligatoire.',
+        'email.required' => "L'identifiant est obligatoire.",
+        'email.unique' => 'Cet identifiant est déjà utilisé.',
+        'mot_de_passe.required' => 'Le mot de passe est obligatoire.',
+        'mot_de_passe.min' => 'Le mot de passe doit contenir au moins 6 caractères.',
+    ];
+
     public function index()
     {
         return User::orderBy('nom')->get(['id', 'nom', 'email', 'role', 'actif']);
@@ -24,7 +33,7 @@ class UserController extends Controller
             'mot_de_passe' => 'required|string|min:6',
             'role' => 'required|in:admin,vendeur',
             'actif' => 'required|boolean',
-        ]);
+        ], self::MESSAGES);
         $user = User::create([
             'nom' => $data['nom'], 'email' => $data['email'], 'password' => Hash::make($data['mot_de_passe']),
             'role' => $data['role'], 'actif' => $data['actif'],
@@ -40,7 +49,7 @@ class UserController extends Controller
             'mot_de_passe' => 'nullable|string|min:6',
             'role' => 'required|in:admin,vendeur',
             'actif' => 'required|boolean',
-        ]);
+        ], self::MESSAGES);
 
         $resteAdminActif = $data['role'] === 'admin' && $data['actif'];
         if ($user->role === 'admin' && !$resteAdminActif

@@ -83,9 +83,9 @@ const fr: Record<string, string> = {
   'param.messageTicket': 'Message en bas du ticket', 'param.formatTicket': 'Format de ticket par défaut', 'param.remiseMax': 'Remise maximale du vendeur (%)',
   'param.remiseMaxHint': 'Seul un administrateur peut dépasser ce seuil.', 'param.enregistre': 'Paramètres enregistrés.', 'param.utilisateurs': 'Utilisateurs', 'param.ajouterUtilisateur': 'Ajouter un utilisateur',
   'param.modifierUtilisateur': "Modifier l'utilisateur", 'param.role': 'Rôle', 'param.actif': 'Actif', 'param.inactif': 'Désactivé', 'param.compteActif': 'Compte actif', 'param.utilisateurOk': 'Utilisateur enregistré.',
-  'param.securiteNote': "Les rôles sont appliqués dans l'interface uniquement : les mots de passe sont stockés en clair dans ce navigateur. Un vrai serveur d'authentification est nécessaire en production.",
-  'param.donneesDemo': 'Données de démonstration', 'param.donneesDemoMsg': 'Remplace toutes les données par le jeu d’exemple.', 'param.resetBtn': 'Réinitialiser', 'param.resetTitre': 'Réinitialiser les données ?',
-  'param.resetMsg': 'Produits, ventes, clients et utilisateurs seront remplacés par les données de démonstration.', 'param.resetOk': 'Données de démonstration rechargées.',
+  'param.securiteNote': "Les droits sont appliqués par le serveur. Un compte désactivé, ou dont le rôle ou le mot de passe change, est déconnecté aussitôt.",
+  'param.mdpMin': '6 caractères minimum.', 'param.mdpGarder': 'Laisser vide pour conserver le mot de passe actuel.',
+  'app.chargement': 'Chargement…',
 
   // Erreurs
   'err.nomProduit': 'Le nom du produit est obligatoire.', 'err.uniteVente': 'Choisissez au moins une unité de vente (pagne ou yard).', 'err.yardsParPagne': 'Le nombre de yards par pagne doit être supérieur à 0.',
@@ -95,6 +95,7 @@ const fr: Record<string, string> = {
   'err.session': 'Votre session a expiré. Reconnectez-vous.', 'err.panierVide': 'Le panier est vide.', 'err.stockInsuffisant': 'Stock insuffisant pour {nom} — {coloris} : {stock} yards disponibles.',
   'err.remiseMax': 'Remise trop élevée : au-delà de {max} %, un administrateur est requis.', 'err.reference': 'La référence de la transaction est obligatoire pour le mobile money.',
   'err.recuInsuffisant': 'Le montant reçu est inférieur au total.', 'err.dejaAnnulee': 'Cette vente est déjà annulée.', 'err.nomClient': 'Le nom du client est obligatoire.',
+  'err.inattendue': 'Une erreur inattendue est survenue. Réessayez.', 'err.mdpCourt': 'Le mot de passe doit contenir au moins 6 caractères.',
   'err.champsUtilisateur': 'Nom, identifiant et mot de passe sont obligatoires.', 'err.identifiantPris': 'Cet identifiant est déjà utilisé.', 'err.dernierAdmin': 'Il doit toujours rester un administrateur actif.',
 };
 

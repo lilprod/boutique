@@ -7,25 +7,14 @@ Le dépôt contient deux applications :
 
 | Dossier | Rôle | Technologies | État |
 |---|---|---|---|
-| [`pagnes-boutique/`](pagnes-boutique) | Frontend (PWA, tablette d'abord) | React 19, TypeScript, Vite | Fonctionnel, données dans le `localStorage` |
-| [`pagnes-api/`](pagnes-api) | API REST | Laravel 13, Sanctum, MySQL | Fonctionnel, testé, pas encore utilisé par le frontend |
+| [`pagnes-boutique/`](pagnes-boutique) | Frontend (PWA, tablette d'abord) | React 19, TypeScript, Vite | Fonctionnel, branché sur l'API |
+| [`pagnes-api/`](pagnes-api) | API REST | Laravel 13, Sanctum, MySQL | Fonctionnel, testé |
 
-> **Le frontend n'appelle pas encore l'API.** Aujourd'hui il tourne seul, avec ses propres données de démonstration.
-> Le raccordement (client HTTP, jeton, conversion `snake_case` → `camelCase`) est la prochaine étape : voir [Feuille de route](#feuille-de-route).
+Le frontend charge toutes ses données depuis l'API après la connexion (jeton Bearer) : rien n'est stocké dans le navigateur, hormis le jeton. **L'API doit donc tourner avant d'ouvrir le frontend.**
 
 ## Démarrage rapide
 
-### Frontend
-
-Prérequis : Node.js 18 ou plus.
-
-```bash
-cd pagnes-boutique
-npm install
-npm run dev        # http://localhost:5173
-```
-
-Détails (build, PWA, fichier unique hors ligne) : [`pagnes-boutique/README.md`](pagnes-boutique/README.md).
+Ordre : base de données, puis API, puis frontend.
 
 ### API
 
@@ -53,6 +42,22 @@ Le seeder crée 3 comptes, 6 produits (18 coloris), 8 clients et 20 ventes dont 
 
 Le `.env.example` fourni est celui de Laravel (SQLite par défaut) : pour MySQL, changez `DB_CONNECTION=mysql` et décommentez `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`.
 
+### Frontend
+
+Prérequis : Node.js 18 ou plus.
+
+```bash
+cd pagnes-boutique
+npm install
+npm run dev        # http://127.0.0.1:5173
+```
+
+Le frontend appelle l'API à `http://127.0.0.1:8000/api`. Pour une autre adresse, copiez `pagnes-boutique/.env.example` en `.env` et changez `VITE_API_URL`. Côté API, l'origine du frontend doit figurer dans `CORS_ALLOWED_ORIGINS` (`.env`) : par défaut `localhost:5173` et `127.0.0.1:5173` sont autorisés.
+
+Sur certains postes, `localhost:5173` est déjà pris par un autre projet : utilisez alors l'adresse `127.0.0.1:5173` affichée par Vite.
+
+Détails (build, PWA) : [`pagnes-boutique/README.md`](pagnes-boutique/README.md).
+
 ### Tests
 
 ```bash
@@ -78,7 +83,7 @@ Ce sont des comptes de démonstration : ne les gardez pas en production.
 
 ## Règles métier
 
-Elles vivent dans `pagnes-api/app/Services/` (et, pour le frontend seul, dans `pagnes-boutique/src/store.tsx`).
+Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le frontend refait les mêmes contrôles de saisie (`pagnes-boutique/src/store.tsx`) uniquement pour afficher des messages immédiats.
 
 - **Unités** : pagne complet (nombre de yards par produit) ou yard au détail. Le stock est tenu en yards.
 - **Remises** : par ligne ou sur le total, en % ou en FCFA. Le plafond vendeur (15 % par défaut, réglable) porte sur la remise effective totale, lignes comprises. L'administrateur n'est pas plafonné.
@@ -104,7 +109,7 @@ Elles vivent dans `pagnes-api/app/Services/` (et, pour le frontend seul, dans `p
 
 Authentification par jeton Sanctum : `POST /api/login` renvoie `{ user, token }`, à envoyer ensuite en `Authorization: Bearer <token>`. Les jetons expirent au bout de 12 h, la connexion est limitée à 5 tentatives par minute, et un compte désactivé perd ses jetons.
 
-Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher.
+Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher. Les listes `ventes` et `mouvements` sont paginées (`?per_page=`, 200 au plus) : le frontend charge toutes les pages.
 
 | Domaine | Routes |
 |---|---|
@@ -121,8 +126,9 @@ Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à
 ```
 pagnes-boutique/            frontend
   src/pages/                Connexion, Tableau de bord, Caisse, Stock, Ventes, Clients, Paramètres
-  src/store.tsx             état global et actions métier (à remplacer par des appels API)
-  src/repo.ts               accès aux données (localStorage aujourd'hui)
+  src/api.ts                client HTTP : jeton Bearer, erreurs, chargement paginé
+  src/lib/mappers.ts        conversion API (snake_case, ids numériques) <-> types du frontend
+  src/store.tsx             état global chargé depuis l'API, actions métier asynchrones
 pagnes-api/                 API Laravel
   app/Services/             règles métier : VenteService, StockService, ProduitService
   app/Http/Controllers/Api/ contrôleurs REST (valident, appellent un service)
@@ -136,9 +142,9 @@ pagnes-api/                 API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Brancher le frontend sur l'API.** `repo.ts` est synchrone alors qu'une API est asynchrone : `store.tsx` est à refaire autour d'un client HTTP avec jeton et conversion `snake_case` → `camelCase`.
-2. **Endpoints manquants** : statistiques du tableau de bord (les ventes sont paginées à 50), filtres par date sur les ventes, numéro de vente formaté (`V-00001`) dans le JSON.
-3. **Photos produit** : le champ `produits.image` attend un chemin de fichier, mais aucun envoi n'est branché.
+1. **Statistiques côté serveur** : le tableau de bord recalcule tout dans le navigateur à partir de l'historique complet des ventes, chargé à chaque connexion. Il faut un endpoint d'agrégats (par jour, vendeur, produit) et des filtres par date, avant que l'historique ne devienne volumineux.
+2. **Photos produit** : elles sont envoyées en `data:` URL (360 px) et stockées en base (`mediumText`), puis renvoyées avec chaque `GET /produits`. À remplacer par un envoi de fichier (`Storage`) et une URL.
+3. **Messages de validation Laravel en français** : ceux des règles métier et des comptes le sont, pas les erreurs de validation génériques (fichiers de langue absents).
 4. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-5. **Messages de validation Laravel en français** (fichiers de langue absents).
+5. **Hors ligne** : le service worker ne met en cache que l'application, pas les données (volontairement : elles sont confidentielles) ; la caisse ne fonctionne donc pas sans réseau.
 6. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
