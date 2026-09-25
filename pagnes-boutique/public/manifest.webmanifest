@@ -1,0 +1,10 @@
+{
+  "name": "Pagnes de Lomé — Gestion de boutique",
+  "short_name": "Pagnes",
+  "lang": "fr",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#FAF4E4",
+  "theme_color": "#1E2A5E",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
