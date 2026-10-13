@@ -29,9 +29,10 @@ export default function Login() {
   const message = err ?? notice;
   return (
     <div className="login">
-      <div className="login-art" aria-hidden="true"><div className="login-art-text"><span>{db.parametres.boutique}</span></div></div>
+      <div className="login-art" aria-hidden="true"><div className="login-art-text"><span>{t('login.marque')}</span><small>{t('login.accroche')}</small></div></div>
       <main className="login-main">
         <form className="login-card" onSubmit={submit}>
+          <span className="login-logo" aria-hidden="true" />
           <h1>{t('login.titre')}</h1>
           <p className="muted-p">{t('login.sousTitre')}</p>
           <Field label={t('login.identifiant')}><input className="input" value={id} onChange={e => setId(e.target.value)} autoComplete="username" autoFocus /></Field>

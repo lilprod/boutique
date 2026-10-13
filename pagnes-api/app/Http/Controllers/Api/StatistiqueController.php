@@ -25,8 +25,8 @@ class StatistiqueController extends Controller
         $aujourdhui = now()->startOfDay();
         $debut = $aujourdhui->copy()->subDays(self::JOURS - 1);
 
-        $ventes = fn (): Builder => Vente::query()->where('statut', 'validee')
-            ->when(!$admin, fn (Builder $q) => $q->where('vendeur_id', $user->id));
+        $ventes = fn (): Builder => Vente::query()->forCurrentContext($user)->where('statut', 'validee')
+            ->when(! $admin, fn (Builder $q) => $q->where('vendeur_id', $user->id));
 
         $parJour = $ventes()->where('created_at', '>=', $debut)
             ->selectRaw('DATE(created_at) as jour, COUNT(*) as nb, SUM(total) as ca, SUM(marge) as marge')
@@ -44,13 +44,17 @@ class StatistiqueController extends Controller
 
         $top = LigneVente::query()->join('ventes', 'ventes.id', '=', 'lignes_vente.vente_id')
             ->where('ventes.statut', 'validee')->where('ventes.created_at', '>=', $debut)
-            ->when(!$admin, fn (Builder $q) => $q->where('ventes.vendeur_id', $user->id))
+            ->when(! $user->is_super_admin, fn (Builder $q) => $q->where('ventes.tenant_id', $user->tenant_id)
+                ->when($user->boutique_id, fn (Builder $query, int $boutiqueId) => $query->where('ventes.boutique_id', $boutiqueId)))
+            ->when(! $user->is_super_admin, fn (Builder $q) => $q->where('lignes_vente.tenant_id', $user->tenant_id)
+                ->when($user->boutique_id, fn (Builder $query, int $boutiqueId) => $query->where('lignes_vente.boutique_id', $boutiqueId)))
+            ->when(! $admin, fn (Builder $q) => $q->where('ventes.vendeur_id', $user->id))
             ->selectRaw('lignes_vente.produit_id, MAX(lignes_vente.libelle) as libelle, SUM(lignes_vente.total) as montant, SUM(lignes_vente.yards) as yards')
             ->groupBy('lignes_vente.produit_id')->orderByDesc('montant')->limit(6)->get()
             ->map(fn ($l) => ['produit_id' => $l->produit_id, 'libelle' => $l->libelle, 'total' => (int) $l->montant, 'yards' => (float) $l->yards]);
 
-        $dernieres = Vente::query()
-            ->when(!$admin, fn (Builder $q) => $q->where('vendeur_id', $user->id)) // toutes les ventes, annulées comprises
+        $dernieres = Vente::query()->forCurrentContext($user)
+            ->when(! $admin, fn (Builder $q) => $q->where('vendeur_id', $user->id)) // toutes les ventes, annulées comprises
             ->with('vendeur:id,nom', 'client:id,nom')->latest()->latest('id')->limit(7)
             ->get(['id', 'numero', 'vendeur_id', 'client_id', 'paiement_mode', 'statut', 'total', 'created_at']);
 
@@ -66,7 +70,11 @@ class StatistiqueController extends Controller
         ];
 
         if ($admin) {
-            $reponse['par_vendeur'] = $ventes()->where('ventes.created_at', '>=', $debut)
+            $reponse['par_vendeur'] = Vente::query()
+                ->where('ventes.tenant_id', $user->tenant_id)
+                ->when($user->boutique_id, fn (Builder $q, int $boutiqueId) => $q->where('ventes.boutique_id', $boutiqueId))
+                ->where('ventes.statut', 'validee')
+                ->where('ventes.created_at', '>=', $debut)
                 ->join('users', 'users.id', '=', 'ventes.vendeur_id')
                 ->selectRaw('ventes.vendeur_id, users.nom, SUM(ventes.total) as ca')
                 ->groupBy('ventes.vendeur_id', 'users.nom')->orderByDesc('ca')->get()
@@ -77,8 +85,9 @@ class StatistiqueController extends Controller
     }
 
     /** Fournisseurs déjà saisis dans les entrées de stock (suggestions du formulaire d'entrée). */
-    public function fournisseurs()
+    public function fournisseurs(Request $request)
     {
-        return Mouvement::whereNotNull('fournisseur')->distinct()->orderBy('fournisseur')->limit(200)->pluck('fournisseur');
+        return Mouvement::query()->forCurrentContext($request->user())->whereNotNull('fournisseur')
+            ->distinct()->orderBy('fournisseur')->limit(200)->pluck('fournisseur');
     }
 }

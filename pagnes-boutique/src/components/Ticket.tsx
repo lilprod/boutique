@@ -32,17 +32,20 @@ export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' 
               <span>{num(l.quantite)} {uniteLabel(l.unite, l.quantite)} × {fcfa(l.prixUnitaire)}</span>
               <span>{fcfa(l.brut)}</span>
             </div>
-            {l.brut > l.total && <div className="t-calc t-disc"><span>{t('ticket.remiseLigne')}</span><span>−{fcfa(l.brut - l.total)}</span></div>}
+            {l.remisePromo > 0 && <div className="t-calc t-disc"><span>{t('ticket.promo', { nom: l.promotionLibelle ?? '' })}</span><span>−{fcfa(l.remisePromo)}</span></div>}
+            {l.brut - l.remisePromo > l.total && <div className="t-calc t-disc"><span>{t('ticket.remiseLigne')}</span><span>−{fcfa(l.brut - l.remisePromo - l.total)}</span></div>}
           </div>
         ))}
       </div>
       <div className="t-tot">
-        {(vente.remiseMontant > 0 || vente.lignes.some(l => l.brut > l.total)) && <div><span>{t('ticket.sousTotal')}</span><span>{fcfa(vente.sousTotal)}</span></div>}
+        {(vente.remiseMontant > 0 || vente.remisePoints > 0 || vente.lignes.some(l => l.brut > l.total)) && <div><span>{t('ticket.sousTotal')}</span><span>{fcfa(vente.sousTotal)}</span></div>}
         {vente.remiseMontant > 0 && <div><span>{t('ticket.remise')}</span><span>−{fcfa(vente.remiseMontant)}</span></div>}
+        {vente.remisePoints > 0 && <div><span>{t('fid.remise')} ({t('fid.utilises', { n: num(vente.pointsUtilises) })})</span><span>−{fcfa(vente.remisePoints)}</span></div>}
         <div className="t-grand"><span>{t('ticket.total')}</span><span>{fcfa(vente.total)}</span></div>
         <div><span>{t('ticket.paiement')}</span><span>{t('pay.' + vente.paiement.mode)}</span></div>
         {vente.paiement.reference && <div><span>{t('ticket.reference')}</span><span>{vente.paiement.reference}</span></div>}
         {vente.paiement.recu ? <><div><span>{t('ticket.recu')}</span><span>{fcfa(vente.paiement.recu)}</span></div><div><span>{t('ticket.rendu')}</span><span>{fcfa(Math.max(0, rendu))}</span></div></> : null}
+        {vente.pointsGagnes > 0 && <div><span>{t('fid.gagnes')}</span><span>+{num(vente.pointsGagnes)}</span></div>}
       </div>
       <div className="t-foot">{p.messageTicket}</div>
     </div>

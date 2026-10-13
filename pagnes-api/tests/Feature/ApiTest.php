@@ -2,9 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\Boutique;
+use App\Models\Client;
 use App\Models\Mouvement;
 use App\Models\Parametre;
+use App\Models\Plan;
 use App\Models\Produit;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Variante;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,21 +26,64 @@ class ApiTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+
     private User $vendeur;
+
     private User $autreVendeur;
+
+    private Tenant $tenant;
+
+    private Boutique $boutique;
 
     protected function setUp(): void
     {
         parent::setUp();
-        Parametre::actuel()->update(['remise_max_vendeur' => 15]);
+        $this->tenant = Tenant::create(['nom' => 'Boutique tests', 'slug' => 'boutique-tests-'.uniqid(), 'statut' => 'active']);
+        $this->boutique = $this->tenant->boutiques()->create(['nom' => 'Boutique tests', 'statut' => 'active']);
+        $plan = Plan::create([
+            'nom' => 'Tests', 'slug' => 'tests-'.uniqid(), 'prix' => 0, 'intervalle' => 'month',
+            'max_boutiques' => 2, 'max_utilisateurs' => 10, 'features' => [], 'actif' => true,
+        ]);
+        $subscription = $this->tenant->subscriptions()->create([
+            'plan_id' => $plan->id, 'status' => 'active', 'starts_at' => now(), 'ends_at' => now()->addMonth(),
+            'trial_ends_at' => now()->addDays(14), 'billing_provider' => 'manual',
+        ]);
+        $this->tenant->licenses()->create([
+            'subscription_id' => $subscription->id, 'status' => 'active', 'cle' => 'API-TEST-'.uniqid(),
+            'activated_at' => now(), 'expires_at' => now()->addMonth(), 'quota_usage' => [],
+        ]);
         $this->admin = $this->compte('admin', 'admin');
         $this->vendeur = $this->compte('yawovi', 'vendeur');
         $this->autreVendeur = $this->compte('essenam', 'vendeur');
+        // Une boutique neuve ne vend qu'au pagne : ces tests portent sur une boutique pagne + yard.
+        Parametre::actuel($this->admin)->update(['remise_max_vendeur' => 15, 'autorise_yard' => true]);
+    }
+
+    private function politique(array $champs): void
+    {
+        Sanctum::actingAs($this->admin);
+        $this->putJson('/api/parametres', $champs + [
+            'boutique' => 'Boutique tests', 'ticket_format' => '80mm', 'remise_max_vendeur' => 15,
+            'autorise_pagne' => true, 'autorise_yard' => true, 'autorise_metre' => false,
+            'quantite_min_panier' => 1, 'unite_stock' => 'yard',
+        ])->assertOk();
     }
 
     private function compte(string $id, string $role, bool $actif = true): User
     {
-        return User::create(['nom' => ucfirst($id), 'email' => $id, 'password' => 'secret123', 'role' => $role, 'actif' => $actif]);
+        return User::create([
+            'nom' => ucfirst($id), 'email' => $id, 'password' => 'secret123', 'role' => $role, 'actif' => $actif,
+            'tenant_id' => $this->tenant->id, 'boutique_id' => $this->boutique->id,
+        ]);
+    }
+
+    private function client(string $nom): Client
+    {
+        return Client::create([
+            'tenant_id' => $this->tenant->id,
+            'boutique_id' => $this->boutique->id,
+            'nom' => $nom,
+        ]);
     }
 
     /** Crée un produit (2 coloris de 100 yards, pagne = 6 yards) et renvoie ses variantes. */
@@ -52,12 +99,14 @@ class ApiTest extends TestCase
             ],
         ]);
         $r->assertOk();
+
         return $r->json();
     }
 
     private function vente(User $par, int $varianteId, array $ligne = [], array $extra = [])
     {
         Sanctum::actingAs($par);
+
         return $this->postJson('/api/ventes', $extra + [
             'remise_type' => 'pct', 'remise_valeur' => 0, 'paiement' => ['mode' => 'especes'],
             'lignes' => [$ligne + ['variante_id' => $varianteId, 'unite' => 'pagne', 'quantite' => 1]],
@@ -114,7 +163,7 @@ class ApiTest extends TestCase
         $this->postJson("/api/ventes/{$vente['id']}/annuler", ['motif' => 'x'])->assertForbidden();
         $this->putJson('/api/parametres', [])->assertForbidden();
         $this->getJson('/api/users')->assertForbidden();
-        $client = \App\Models\Client::create(['nom' => 'Akossiwa']);
+        $client = $this->client('Akossiwa');
         $this->deleteJson("/api/clients/{$client->id}")->assertForbidden();
 
         $this->assertDatabaseHas('produits', ['id' => $p['id']]);
@@ -293,7 +342,125 @@ class ApiTest extends TestCase
         $this->postJson("/api/variantes/{$vid}/ajuster", ['nouveau_stock' => 112, 'motif' => 'RAS'])->assertStatus(422);
         $this->postJson("/api/variantes/{$vid}/ajuster", ['nouveau_stock' => 100, 'motif' => 'Coupes abîmées'])->assertOk();
         $this->assertEquals(100, Variante::find($vid)->stock);
-        $this->assertEquals(-12, Mouvement::where('type', 'ajustement')->value('yards'));
+        $this->assertEquals(-12, Mouvement::where('type', 'ajustement')->value('quantite'));
+    }
+
+    public function test_boutique_neuve_ne_vend_qu_au_pagne(): void
+    {
+        $autre = $this->tenant->boutiques()->create(['nom' => 'Deuxième', 'statut' => 'active']);
+        $gerant = User::create([
+            'nom' => 'Gerant', 'email' => 'gerant', 'password' => 'secret123', 'role' => 'admin', 'actif' => true,
+            'tenant_id' => $this->tenant->id, 'boutique_id' => $autre->id,
+        ]);
+        $p = Parametre::actuel($gerant);
+
+        $this->assertTrue($p->autorise_pagne);
+        $this->assertFalse($p->autorise_yard);
+        $this->assertFalse($p->autorise_metre);
+        $this->assertSame('yard', $p->unite_stock);
+        // La politique est propre à chaque boutique : celle des tests garde le yard.
+        $this->assertTrue(Parametre::actuel($this->admin)->autorise_yard);
+    }
+
+    public function test_politique_de_la_boutique_restreint_produits_et_ventes(): void
+    {
+        $p = $this->produit();
+        $vid = $p['variantes'][0]['id'];
+        $this->politique(['autorise_yard' => false]);
+
+        $this->vente($this->vendeur, $vid, ['unite' => 'yard', 'quantite' => 2])
+            ->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'n’est pas autorisée'));
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson('/api/produits', [
+            'nom' => 'Bazin', 'type' => 'Bazin', 'yards_par_pagne' => 6, 'vend_pagne' => true, 'vend_yard' => true,
+            'prix_pagne' => 1000, 'prix_yard' => 200, 'prix_achat_pagne' => 500,
+            'variantes' => [['coloris' => 'Blanc', 'c1' => '#FFFFFF', 'c2' => '#FFFFFF', 'seuil' => 1]],
+        ])->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'politique de vente'));
+    }
+
+    public function test_parametres_exigent_au_moins_une_unite_de_vente(): void
+    {
+        Sanctum::actingAs($this->admin);
+        $this->putJson('/api/parametres', [
+            'boutique' => 'Boutique tests', 'ticket_format' => '80mm', 'remise_max_vendeur' => 15,
+            'autorise_pagne' => false, 'autorise_yard' => false, 'autorise_metre' => false,
+            'quantite_min_panier' => 1, 'unite_stock' => 'yard',
+        ])->assertStatus(422);
+    }
+
+    /** Grossiste : seul le pagne est autorisé, le minimum porte sur la somme du panier. */
+    public function test_minimum_par_vente_pour_une_boutique_pagne_seul(): void
+    {
+        $a = $this->produit(['vend_yard' => false])['variantes'];
+        $this->politique(['autorise_yard' => false, 'quantite_min_panier' => 3]);
+
+        $this->vente($this->vendeur, $a[0]['id'], ['quantite' => 2])
+            ->assertStatus(422)->assertJsonPath('message', 'Quantité minimale par vente : 3 pagne(s).');
+
+        // 2 + 1 pagnes sur deux coloris : le minimum s'applique au panier entier, pas à la ligne.
+        Sanctum::actingAs($this->vendeur);
+        $this->postJson('/api/ventes', [
+            'remise_type' => 'pct', 'remise_valeur' => 0, 'paiement' => ['mode' => 'especes'],
+            'lignes' => [
+                ['variante_id' => $a[0]['id'], 'unite' => 'pagne', 'quantite' => 2],
+                ['variante_id' => $a[1]['id'], 'unite' => 'pagne', 'quantite' => 1],
+            ],
+        ])->assertCreated();
+    }
+
+    public function test_minimum_ignore_si_la_boutique_vend_aussi_au_yard(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $this->politique(['quantite_min_panier' => 3]);
+
+        $this->vente($this->vendeur, $vid, ['quantite' => 1])->assertCreated();
+    }
+
+    public function test_vente_au_metre_convertie_dans_l_unite_de_stock(): void
+    {
+        $this->politique(['autorise_metre' => true]);
+        $vid = $this->produit(['vend_metre' => true, 'prix_metre' => 8000])['variantes'][0]['id'];
+
+        $vente = $this->vente($this->vendeur, $vid, ['unite' => 'metre', 'quantite' => 5])->assertCreated()->json();
+
+        $this->assertSame(40000, $vente['total']); // 5 m × 8 000
+        $this->assertEquals(94.53, Variante::find($vid)->stock); // 5 m = 5,47 yards
+        $this->assertEquals(-5.47, Mouvement::where('type', 'vente')->value('quantite'));
+    }
+
+    /** L'annulation restaurait `yards` (pivot de coût) : faux dès que le stock n'est plus en yards. */
+    public function test_stock_en_pagnes_vente_et_annulation(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $this->politique(['unite_stock' => 'pagne']);
+        $this->assertEquals(16.67, Variante::find($vid)->stock); // 100 yards / 6 convertis au changement d'unité
+        $this->assertEquals(1.67, Variante::find($vid)->seuil);
+        $this->assertEquals(16.67, Mouvement::where('variante_id', $vid)->where('type', 'entree')->value('quantite'));
+
+        $vente = $this->vente($this->vendeur, $vid, ['quantite' => 2])->assertCreated()->json();
+        $this->assertEquals(14.67, Variante::find($vid)->stock);
+        $this->assertEquals(12, $vente['lignes'][0]['yards']); // le coût reste calculé en yards
+        $this->assertEquals(2, $vente['lignes'][0]['quantite_stock']);
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/ventes/{$vente['id']}/annuler", ['motif' => 'Erreur'])->assertOk();
+        $this->assertEquals(16.67, Variante::find($vid)->stock);
+
+        $this->postJson("/api/variantes/{$vid}/entree", ['unite' => 'yard', 'quantite' => 3])->assertOk();
+        $this->assertEquals(17.17, Variante::find($vid)->stock); // 3 yards = 0,5 pagne
+    }
+
+    /** Une vente faite en yards puis annulée après passage du stock en pagnes doit restaurer des pagnes. */
+    public function test_annulation_apres_changement_d_unite_de_stock(): void
+    {
+        $vid = $this->produit()['variantes'][0]['id'];
+        $vente = $this->vente($this->vendeur, $vid, ['quantite' => 2])->assertCreated()->json(); // 12 yards
+        $this->politique(['unite_stock' => 'pagne']); // 88 yards -> 14,67 pagnes
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/ventes/{$vente['id']}/annuler", ['motif' => 'Erreur'])->assertOk();
+        $this->assertEquals(16.67, Variante::find($vid)->stock);
     }
 
     public function test_photo_produit_envoyee_comme_fichier_et_exposee_par_url(): void
@@ -309,7 +476,7 @@ class ApiTest extends TestCase
         $chemin = Produit::find($p['id'])->image;
         $this->assertMatchesRegularExpression('#^produits/[0-9a-f-]{36}\.jpg$#', $chemin);
         Storage::disk('photos')->assertExists($chemin);
-        $this->assertSame(url('photos/' . $chemin), $r['image_url']);
+        $this->assertSame(url('photos/'.$chemin), $r['image_url']);
         $this->assertSame($r['image_url'], $this->getJson('/api/produits')->json('0.image_url')); // la liste porte l'URL, pas le fichier
     }
 
@@ -427,6 +594,7 @@ class ApiTest extends TestCase
         $this->vente($this->autreVendeur, $vid)->assertCreated();
         Sanctum::actingAs($this->admin);
         $this->postJson("/api/ventes/{$annulee['id']}/annuler", ['motif' => 'Erreur'])->assertOk();
+
         return $vid;
     }
 
@@ -479,7 +647,7 @@ class ApiTest extends TestCase
     public function test_recherche_et_filtres_des_ventes(): void
     {
         $vid = $this->produit()['variantes'][0]['id'];
-        $client = \App\Models\Client::create(['nom' => 'Akossiwa Mensah']);
+        $client = $this->client('Akossiwa Mensah');
         $this->vente($this->vendeur, $vid, [], ['client_id' => $client->id])->assertCreated();                                   // V-00001
         $this->vente($this->vendeur, $vid, [], ['paiement' => ['mode' => 'flooz', 'reference' => 'FZ777']])->assertCreated();   // V-00002
         $this->vente($this->autreVendeur, $vid)->assertCreated();                                                                // V-00003
@@ -494,8 +662,8 @@ class ApiTest extends TestCase
         $this->assertSame([3], $numeros('q=essenam'));       // vendeur
         $this->assertCount(3, $numeros('q=damier'));         // article
         $this->assertSame([], $numeros('q=introuvable'));
-        $this->assertSame([], $numeros('du=' . now()->addDay()->toDateString()));
-        $this->assertCount(3, $numeros('du=' . now()->toDateString() . '&au=' . now()->toDateString()));
+        $this->assertSame([], $numeros('du='.now()->addDay()->toDateString()));
+        $this->assertCount(3, $numeros('du='.now()->toDateString().'&au='.now()->toDateString()));
 
         $this->getJson('/api/ventes?statut=nimporte')->assertStatus(422);
 
@@ -507,8 +675,8 @@ class ApiTest extends TestCase
     public function test_clients_exposent_achats_depense_et_derniere_vente(): void
     {
         $vid = $this->produit()['variantes'][0]['id'];
-        $avec = \App\Models\Client::create(['nom' => 'Avec achats']);
-        \App\Models\Client::create(['nom' => 'Sans achat']);
+        $avec = $this->client('Avec achats');
+        $this->client('Sans achat');
         $this->vente($this->vendeur, $vid, [], ['client_id' => $avec->id])->assertCreated();
         $annulee = $this->vente($this->vendeur, $vid, [], ['client_id' => $avec->id])->assertCreated()->json();
         Sanctum::actingAs($this->admin);

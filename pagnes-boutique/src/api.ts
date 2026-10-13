@@ -57,6 +57,27 @@ export const post = <T = any>(path: string, body?: unknown) => request<T>('POST'
 export const put = <T = any>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {});
 export const del = <T = any>(path: string) => request<T>('DELETE', path);
 
+export async function getBlob(path: string): Promise<Blob> {
+  const headers: Record<string, string> = { Accept: '*/*' };
+  const tk = token.get();
+  if (tk) headers.Authorization = `Bearer ${tk}`;
+
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, { headers });
+  } catch {
+    throw new ApiError('Serveur injoignable. Vérifiez la connexion.', 0);
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    if (res.status === 401 && tk) onUnauthorized();
+    throw new ApiError(messageOf(res.status, body), res.status);
+  }
+
+  return res.blob();
+}
+
 /** Charge toutes les pages d'une liste paginée Laravel (200 par page, plafond de sécurité de 50 pages). */
 export async function getAll<T = any>(path: string): Promise<T[]> {
   const sep = path.includes('?') ? '&' : '?';

@@ -35,7 +35,8 @@ export function LineChart({ data, ariaLabel }: { data: { label: string; value: n
           </g>
         ))}
         <path d={area} className="area" />
-        <path d={line} className="line" />
+        {/* pathLength=1 : l'animation de tracé (stroke-dasharray: 1 dans styles.css) couvre toute la courbe. */}
+        <path d={line} className="line" pathLength={1} />
         {data.map((d, i) => (i % every === 0 || i === data.length - 1) && (
           <text key={i} x={x(i)} y={H - 6} textAnchor="middle" className="axis">{d.label}</text>
         ))}

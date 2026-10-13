@@ -8,7 +8,7 @@ import { uid } from '../lib/format';
 export function ClientForm({ client, onClose, onSaved }: { client?: Client; onClose: () => void; onSaved?: (c: Client) => void }) {
   const { saveClient } = useApp();
   const { toast } = useUI();
-  const [c, setC] = useState<Client>(client ?? { id: uid('c_'), nom: '', telephone: '', adresse: '', creeLe: new Date().toISOString() });
+  const [c, setC] = useState<Client>(client ?? { id: uid('c_'), nom: '', telephone: '', adresse: '', creeLe: new Date().toISOString(), points: 0 });
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

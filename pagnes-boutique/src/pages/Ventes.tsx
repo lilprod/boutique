@@ -4,16 +4,16 @@ import type { Vente } from '../types';
 import { useApp } from '../store';
 import { get } from '../api';
 import { t } from '../i18n';
-import { Badge, Empty, Field, Modal, useUI } from '../components/ui';
+import { Badge, Empty, Field, Modal, SkeletonRows, useUI } from '../components/ui';
 import { TicketModal } from '../components/TicketModal';
 import { fcfa, fmtDateTime, numeroVente } from '../lib/format';
 import { toVente } from '../lib/mappers';
 import { useDebounced, usePaged } from '../lib/usePaged';
 
 export default function Ventes() {
-  const { user, annulerVente } = useApp();
+  const { user, shopMode, annulerVente } = useApp();
   const { toast } = useUI();
-  const admin = user!.role === 'admin';
+  const admin = user!.role === 'admin' || user!.role === 'boutique_admin' || (user!.role === 'tenant_admin' && shopMode);
   const [q, setQ] = useState('');
   const [statut, setStatut] = useState('');
   const [du, setDu] = useState('');
@@ -64,7 +64,7 @@ export default function Ventes() {
             </tbody>
           </table>
           {list.error && <div role="alert" className="pad"><p className="error">{list.error}</p><button className="btn btn-sm" onClick={() => void list.reload()}>{t('common.reessayer')}</button></div>}
-          {!list.error && list.loading && list.rows.length === 0 && <p className="muted-p pad" role="status">{t('app.chargement')}</p>}
+          {!list.error && list.loading && list.rows.length === 0 && <SkeletonRows label={t('app.chargement')} />}
           {!list.error && !list.loading && list.rows.length === 0 && <Empty title={t('common.aucunResultat')} />}
         </div>
         {list.rows.length > 0 && (

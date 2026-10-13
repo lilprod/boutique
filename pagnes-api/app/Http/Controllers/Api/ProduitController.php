@@ -14,7 +14,13 @@ class ProduitController extends Controller
 
     public function index(Request $request)
     {
-        $produits = Produit::with('variantes')->orderBy('nom')->get();
+        $produits = Produit::query()
+            ->forCurrentTenant($request->user())
+            ->forCurrentBoutique($request->user())
+            ->with('variantes')
+            ->orderBy('nom')
+            ->get();
+
         // Le prix d'achat (donc la marge) reste réservé à l'administrateur, comme dans l'UI.
         return $request->user()->estAdmin() ? $produits : $produits->each->makeHidden('prix_achat_pagne');
     }
@@ -26,6 +32,8 @@ class ProduitController extends Controller
 
     public function update(Request $request, Produit $produit)
     {
+        abort_unless($produit->belongsToCurrentContext($request->user()), 404);
+
         return $this->save($request, $produit);
     }
 
@@ -39,8 +47,11 @@ class ProduitController extends Controller
             'yards_par_pagne' => 'required|numeric|min:0.01',
             'vend_pagne' => 'required|boolean',
             'vend_yard' => 'required|boolean',
+            'vend_metre' => 'sometimes|boolean',
+            'proprietaire_id' => 'nullable|integer',
             'prix_pagne' => 'required|integer|min:0',
             'prix_yard' => 'required|integer|min:0',
+            'prix_metre' => 'sometimes|integer|min:0',
             'prix_achat_pagne' => 'required|integer|min:0',
             'variantes' => 'required|array|min:1',
             'variantes.*.id' => 'nullable|integer|exists:variantes,id',
@@ -52,8 +63,17 @@ class ProduitController extends Controller
             'variantes.*.stock' => 'nullable|numeric|min:0',
         ]);
 
+        $donneesProduit = array_merge(
+            collect($data)->except('variantes')->all(),
+            [
+                'tenant_id' => $request->user()->tenant_id,
+                'boutique_id' => $request->user()->boutique_id,
+            ]
+        );
+
         try {
-            $produit = $this->service->enregistrer($produit, collect($data)->except('variantes')->all(), $data['variantes'], $request->user());
+            $produit = $this->service->enregistrer($produit, $donneesProduit, $data['variantes'], $request->user());
+
             return response()->json($produit);
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -63,6 +83,8 @@ class ProduitController extends Controller
     /** Dépose ou remplace la photo (multipart, champ `image`). JPEG, PNG ou WebP : le SVG est refusé (il peut contenir du script). */
     public function image(Request $request, Produit $produit)
     {
+        abort_unless($produit->belongsToCurrentContext($request->user()), 404);
+
         $request->validate(
             ['image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048', 'dimensions:max_width=4000,max_height=4000']],
             [
@@ -81,15 +103,20 @@ class ProduitController extends Controller
         }
     }
 
-    public function supprimerImage(Produit $produit)
+    public function supprimerImage(Request $request, Produit $produit)
     {
+        abort_unless($produit->belongsToCurrentContext($request->user()), 404);
+
         return response()->json($this->service->retirerImage($produit));
     }
 
     public function destroy(Request $request, Produit $produit)
     {
+        abort_unless($produit->belongsToCurrentContext($request->user()), 404);
+
         try {
             $this->service->supprimer($produit);
+
             return response()->noContent();
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

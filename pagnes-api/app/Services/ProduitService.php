@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Exceptions\RegleMetierException;
 use App\Models\LigneVente;
 use App\Models\Mouvement;
+use App\Models\Parametre;
 use App\Models\Produit;
+use App\Models\Proprietaire;
 use App\Models\User;
 use App\Models\Variante;
 use Illuminate\Http\UploadedFile;
@@ -16,26 +18,45 @@ use Illuminate\Support\Str;
 class ProduitService
 {
     /**
-     * @param array $donnees champs de la table `produits`
-     * @param array $variantes [['id' => ?int, 'coloris' => string, 'sku' => ?string, 'c1' => string, 'c2' => string, 'seuil' => float, 'stock' => ?float], ...]
+     * @param  array  $donnees  champs de la table `produits`
+     * @param  array  $variantes  [['id' => ?int, 'coloris' => string, 'sku' => ?string, 'c1' => string, 'c2' => string, 'seuil' => float, 'stock' => ?float], ...]
      */
     public function enregistrer(?Produit $existant, array $donnees, array $variantes, User $utilisateur): Produit
     {
         if (trim($donnees['nom'] ?? '') === '') {
             throw new RegleMetierException('Le nom du produit est obligatoire.');
         }
-        if (empty($donnees['vend_pagne']) && empty($donnees['vend_yard'])) {
-            throw new RegleMetierException('Choisissez au moins une unité de vente (pagne ou yard).');
+        $vendues = array_filter(Produit::UNITES, fn ($u) => ! empty($donnees['vend_'.$u]));
+        if (! $vendues) {
+            throw new RegleMetierException('Choisissez au moins une unité de vente.');
+        }
+        $parametres = Parametre::actuel($utilisateur);
+        foreach ($vendues as $u) {
+            if (! $parametres->autorise($u)) {
+                throw new RegleMetierException(sprintf(
+                    'La vente au %s n’est pas autorisée par la politique de vente de cette boutique.', Produit::LIBELLES_UNITES[$u]
+                ));
+            }
         }
         if (($donnees['yards_par_pagne'] ?? 0) <= 0) {
             throw new RegleMetierException('Le nombre de yards par pagne doit être supérieur à 0.');
         }
-        if ((!empty($donnees['vend_pagne']) && ($donnees['prix_pagne'] ?? 0) <= 0)
-            || (!empty($donnees['vend_yard']) && ($donnees['prix_yard'] ?? 0) <= 0)) {
-            throw new RegleMetierException('Indiquez un prix de vente pour chaque unité vendable.');
+        foreach ($vendues as $u) {
+            if (($donnees['prix_'.$u] ?? 0) <= 0) {
+                throw new RegleMetierException('Indiquez un prix de vente pour chaque unité vendable.');
+            }
         }
         if (count($variantes) === 0 || collect($variantes)->contains(fn ($v) => trim($v['coloris'] ?? '') === '')) {
             throw new RegleMetierException('Ajoutez au moins un coloris et donnez un nom à chacun.');
+        }
+
+        // Propriétaire choisi explicitement, sinon celui que désigne la règle du motif (s'il y en a une).
+        if (! empty($donnees['proprietaire_id'])) {
+            if (! Proprietaire::query()->forCurrentContext($utilisateur)->whereKey($donnees['proprietaire_id'])->exists()) {
+                throw new RegleMetierException('Propriétaire inconnu dans cette boutique.');
+            }
+        } else {
+            $donnees['proprietaire_id'] = app(ProprietaireService::class)->pourMotif($utilisateur, $donnees['motif'] ?? null);
         }
 
         return DB::transaction(function () use ($existant, $donnees, $variantes, $utilisateur) {
@@ -56,7 +77,7 @@ class ProduitService
             }
             foreach ($variantes as $v) {
                 $sku = trim($v['sku'] ?? '');
-                if ($sku !== '' && Variante::where('sku', $sku)->where('id', '!=', $v['id'] ?? 0)->exists()) {
+                if ($sku !== '' && Variante::where('tenant_id', $utilisateur->tenant_id)->where('boutique_id', $utilisateur->boutique_id)->where('sku', $sku)->where('id', '!=', $v['id'] ?? 0)->exists()) {
                     throw new RegleMetierException("Le SKU « {$sku} » est déjà utilisé par un autre coloris.");
                 }
             }
@@ -73,7 +94,7 @@ class ProduitService
             Variante::destroy($aSupprimer->pluck('id'));
 
             foreach ($variantes as $v) {
-                if (!empty($v['id'])) {
+                if (! empty($v['id'])) {
                     // Le SKU est NOT NULL : on ne le modifie que s'il est fourni, sinon on garde l'existant.
                     Variante::whereKey($v['id'])->update(array_filter([
                         'coloris' => trim($v['coloris']), 'sku' => trim($v['sku'] ?? '') ?: null,
@@ -82,13 +103,17 @@ class ProduitService
                 } else {
                     $stockInitial = max(0, (float) ($v['stock'] ?? 0));
                     $nouvelle = $produit->variantes()->create([
+                        'tenant_id' => $utilisateur->tenant_id,
+                        'boutique_id' => $utilisateur->boutique_id,
                         'coloris' => trim($v['coloris']),
-                        'sku' => trim($v['sku'] ?? '') ?: $this->skuLibre($produit),
+                        'sku' => trim($v['sku'] ?? '') ?: $this->skuLibre($produit, $utilisateur),
                         'c1' => $v['c1'], 'c2' => $v['c2'], 'seuil' => $v['seuil'] ?? 0, 'stock' => $stockInitial,
                     ]);
                     if ($stockInitial > 0) {
                         Mouvement::create([
-                            'variante_id' => $nouvelle->id, 'type' => 'entree', 'yards' => $stockInitial,
+                            'tenant_id' => $utilisateur->tenant_id,
+                            'boutique_id' => $utilisateur->boutique_id,
+                            'variante_id' => $nouvelle->id, 'type' => 'entree', 'quantite' => $stockInitial,
                             'user_id' => $utilisateur->id, 'motif' => 'Stock initial', 'prix_achat_pagne' => $produit->prix_achat_pagne,
                         ]);
                     }
@@ -100,12 +125,12 @@ class ProduitService
     }
 
     /** Prochain SKU lisible et libre, au format TYPE-PP-NN (ex. WAX-07-02). */
-    private function skuLibre(Produit $produit): string
+    private function skuLibre(Produit $produit, User $utilisateur): string
     {
-        $prefixe = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', \Illuminate\Support\Str::ascii($produit->type)), 0, 3)) ?: 'ART';
+        $prefixe = strtoupper(substr(preg_replace('/[^A-Za-z]/', '', Str::ascii($produit->type)), 0, 3)) ?: 'ART';
         for ($n = $produit->variantes()->count() + 1; ; $n++) {
             $sku = sprintf('%s-%02d-%02d', $prefixe, $produit->id, $n);
-            if (!Variante::where('sku', $sku)->exists()) {
+            if (! Variante::where('tenant_id', $utilisateur->tenant_id)->where('boutique_id', $utilisateur->boutique_id)->where('sku', $sku)->exists()) {
                 return $sku;
             }
         }
@@ -116,7 +141,7 @@ class ProduitService
     {
         $ancien = $produit->image;
         // Nom aléatoire et extension déduite du contenu réel (jamais celle envoyée par le client).
-        $chemin = Storage::disk('photos')->putFileAs('produits', $fichier, Str::uuid() . '.' . $fichier->extension());
+        $chemin = Storage::disk('photos')->putFileAs('produits', $fichier, Str::uuid().'.'.$fichier->extension());
         if ($chemin === false) {
             throw new RegleMetierException("La photo n'a pas pu être enregistrée sur le serveur.");
         }

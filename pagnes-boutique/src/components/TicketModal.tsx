@@ -6,7 +6,8 @@ import { t } from '../i18n';
 import { doPrint, Modal, PrintRoot, Segmented } from './ui';
 import { Ticket } from './Ticket';
 
-export function TicketModal({ vente, title, onClose, children }: { vente: Vente; title: string; onClose: () => void; children?: React.ReactNode }) {
+/** `lead` : contenu facultatif affiché au-dessus de l'aperçu (ex. confirmation animée après une vente). */
+export function TicketModal({ vente, title, onClose, children, lead }: { vente: Vente; title: string; onClose: () => void; children?: React.ReactNode; lead?: React.ReactNode }) {
   const { db } = useApp();
   const [fmt, setFmt] = useState<'80mm' | 'A4'>(db.parametres.ticketFormat);
   return (
@@ -17,6 +18,7 @@ export function TicketModal({ vente, title, onClose, children }: { vente: Vente;
         {children}
         <button className="btn btn-primary" onClick={() => doPrint(fmt)}><LuPrinter /> {t('ticket.imprimer')}</button>
       </>}>
+      {lead}
       <div className="ticket-preview"><Ticket vente={vente} format={fmt} /></div>
       <PrintRoot><Ticket vente={vente} format={fmt} /></PrintRoot>
     </Modal>

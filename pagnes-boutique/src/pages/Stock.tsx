@@ -5,23 +5,27 @@ import { toMouvement } from '../lib/mappers';
 import { usePaged } from '../lib/usePaged';
 import { useApp, type PhotoChange, type VarForm } from '../store';
 import { t, uniteLabel } from '../i18n';
-import { Badge, Empty, Field, Modal, NumInput, Segmented, Swatch, resizeImage, useUI } from '../components/ui';
+import { Badge, Empty, Field, Modal, NumInput, Segmented, SkeletonRows, Swatch, resizeImage, useUI } from '../components/ui';
 import { COLORIS, TYPES } from '../data/catalogue';
-import { statutStock, yardsOf } from '../lib/calc';
-import { fcfa, fmtDateTime, norm, num, r2, uid } from '../lib/format';
+import { autorise, prixUnitaire, quantitePour, statutStock, UNITES, vendAu, YARD_EN_METRES } from '../lib/calc';
+import { cls, fcfa, fmtDateTime, norm, num, r2, uid } from '../lib/format';
 
 type ModalState = null | { kind: 'produit'; id?: string } | { kind: 'entree'; vid: string } | { kind: 'ajust'; vid: string };
 
 export default function Stock() {
-  const { db, user, deleteProduit } = useApp();
+  const { db, user, shopMode, deleteProduit } = useApp();
   const { toast, confirm } = useUI();
-  const admin = user!.role === 'admin';
+  const admin = user!.role === 'admin' || user!.role === 'boutique_admin' || (user!.role === 'tenant_admin' && shopMode);
   const [tab, setTab] = useState<'articles' | 'mouvements'>('articles');
-  const [f, setF] = useState({ q: '', type: '', motif: '', coloris: '', origine: '', statut: '' });
+  // proprio : '' = tous, '_' = non attribué, sinon l'id du propriétaire.
+  const [f, setF] = useState({ q: '', type: '', motif: '', coloris: '', origine: '', statut: '', proprio: '' });
   const [mtype, setMtype] = useState('');
   const [histVid, setHistVid] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const set = (k: keyof typeof f, v: string) => setF(x => ({ ...x, [k]: v }));
+  const uS = db.parametres.uniteStock;
+  const multi = db.parametres.multiProprietaires;
+  const nomProprio = (p: Produit) => db.proprietaires.find(x => x.id === p.proprietaireId)?.nom ?? t('prop.nonAttribue');
 
   const rows = useMemo(() => db.variantes.map(v => ({ v, p: db.produits.find(p => p.id === v.produitId)! })).filter(r => r.p)
     .sort((a, b) => a.p.nom.localeCompare(b.p.nom, 'fr') || a.v.coloris.localeCompare(b.v.coloris, 'fr')), [db.variantes, db.produits]);
@@ -35,6 +39,7 @@ export default function Stock() {
     if (f.coloris && v.coloris !== f.coloris) return false;
     if (f.origine && p.origine !== f.origine) return false;
     if (f.statut && statutStock(v) !== f.statut) return false;
+    if (multi && f.proprio && (f.proprio === '_' ? !!p.proprietaireId : p.proprietaireId !== f.proprio)) return false;
     return true;
   });
 
@@ -64,6 +69,13 @@ export default function Stock() {
         <section className="panel">
           <div className="filters">
             <div className="search"><LuSearch /><input className="input" placeholder={t('stock.rechercher')} value={f.q} onChange={e => set('q', e.target.value)} aria-label={t('stock.rechercher')} /></div>
+            {multi && (
+              <select className="select" value={f.proprio} onChange={e => set('proprio', e.target.value)} aria-label={t('prop.proprietaire')}>
+                <option value="">{t('prop.tous')}</option>
+                {db.proprietaires.map(o => <option key={o.id} value={o.id}>{o.nom}</option>)}
+                <option value="_">{t('prop.nonAttribue')}</option>
+              </select>
+            )}
             <select className="select" value={f.type} onChange={e => set('type', e.target.value)} aria-label={t('stock.type')}><option value="">{t('stock.tousTypes')}</option>{opts.type.map(o => <option key={o}>{o}</option>)}</select>
             <select className="select" value={f.motif} onChange={e => set('motif', e.target.value)} aria-label={t('stock.motif')}><option value="">{t('stock.tousMotifs')}</option>{opts.motif.map(o => <option key={o}>{o}</option>)}</select>
             <select className="select" value={f.coloris} onChange={e => set('coloris', e.target.value)} aria-label={t('stock.coloris')}><option value="">{t('stock.tousColoris')}</option>{opts.coloris.map(o => <option key={o}>{o}</option>)}</select>
@@ -85,9 +97,21 @@ export default function Stock() {
                   return (
                     <tr key={v.id}>
                       <td><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={38} /></td>
-                      <td><div className="strong">{p.nom}</div><div>{v.coloris}</div><div className="muted-s">{p.type} · {p.motif} · {p.origine}</div></td>
-                      <td className="r nowrap"><div className="strong">{num(v.stock)} yd</div><div className="muted-s">≈ {num(Math.round((v.stock / p.yardsParPagne) * 10) / 10)} {uniteLabel('pagne', 2)} · {t('stock.seuil').toLowerCase()} {num(v.seuil)}</div></td>
-                      <td className="r nowrap">{p.vendPagne && <div>{fcfa(p.prixPagne)}<span className="muted-s"> / {t('unite.pagne')}</span></div>}{p.vendYard && <div className="muted-s">{fcfa(p.prixYard)} / {t('unite.yard')}</div>}{admin && <div className="muted-s">{t('stock.achat')} {fcfa(p.prixAchatPagne)}{marge !== null && ` · ${t('stock.marge', { n: String(marge) })}`}</div>}</td>
+                      <td>
+                        <div className="strong">{p.nom}</div><div>{v.coloris}</div><div className="muted-s">{p.type} · {p.motif} · {p.origine}</div>
+                        {multi && <div className="tags"><span className={cls('tag', !p.proprietaireId && 'mute')}>{nomProprio(p)}</span></div>}
+                      </td>
+                      <td className="r nowrap">
+                        <div className="strong">{num(v.stock)} {uniteLabel(uS, v.stock)}</div>
+                        <div className="muted-s">
+                          {uS !== 'pagne' && <>≈ {num(Math.round(quantitePour(p, uS, v.stock, 'pagne') * 10) / 10)} {uniteLabel('pagne', 2)} · </>}
+                          {t('stock.seuil').toLowerCase()} {num(v.seuil)}
+                        </div>
+                      </td>
+                      <td className="r nowrap">
+                        {UNITES.filter(u => vendAu(p, u)).map((u, i) => <div key={u} className={i > 0 ? 'muted-s' : undefined}>{fcfa(prixUnitaire(p, u))}<span className="muted-s"> / {t('unite.' + u)}</span></div>)}
+                        {admin && <div className="muted-s">{t('stock.achat')} {fcfa(p.prixAchatPagne)}{marge !== null && ` · ${t('stock.marge', { n: String(marge) })}`}</div>}
+                      </td>
                       <td><Badge kind={s === 'ok' ? 'ok' : s === 'bas' ? 'warn' : 'bad'}>{t('stock.' + s)}</Badge></td>
                       {admin && (
                         <td className="r nowrap">
@@ -124,7 +148,7 @@ export default function Stock() {
                   <tr key={m.id}>
                     <td>{fmtDateTime(m.date)}</td><td>{label(m.varianteId)}</td>
                     <td><Badge kind={m.type === 'entree' ? 'ok' : m.type === 'vente' ? 'info' : m.type === 'annulation' ? 'mute' : 'warn'}>{t('mvt.' + m.type)}</Badge></td>
-                    <td className={'r strong ' + (m.yards < 0 ? 'red' : 'green')}>{m.yards > 0 ? '+' : ''}{num(m.yards)} yd</td>
+                    <td className={'r strong ' + (m.quantite < 0 ? 'red' : 'green')}>{m.quantite > 0 ? '+' : ''}{num(m.quantite)} {uniteLabel(uS, Math.abs(m.quantite))}</td>
                     <td>{m.userNom ?? '—'}</td>
                     <td className="muted-s">{m.motif}{m.fournisseur ? ` · ${m.fournisseur}` : ''}{admin && m.prixAchatPagne ? ` · ${fcfa(m.prixAchatPagne)}/${t('unite.pagne')}` : ''}</td>
                   </tr>
@@ -132,7 +156,7 @@ export default function Stock() {
               </tbody>
             </table>
             {mvt.error && <div role="alert" className="pad"><p className="error">{mvt.error}</p><button className="btn btn-sm" onClick={() => void mvt.reload()}>{t('common.reessayer')}</button></div>}
-            {!mvt.error && mvt.loading && mvt.rows.length === 0 && <p className="muted-p pad" role="status">{t('app.chargement')}</p>}
+            {!mvt.error && mvt.loading && mvt.rows.length === 0 && <SkeletonRows label={t('app.chargement')} />}
             {!mvt.error && !mvt.loading && mvt.rows.length === 0 && <Empty title={t('common.aucunResultat')} />}
           </div>
           {mvt.hasMore && <div className="table-foot"><button className="btn btn-sm" disabled={mvt.loading} onClick={() => void mvt.more()}>{t('common.voirPlus')}</button></div>}
@@ -150,16 +174,31 @@ export default function Stock() {
 function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
   const { db, saveProduit } = useApp();
   const { toast } = useUI();
+  const params = db.parametres;
+  const uS = params.uniteStock;
+  // Même règle que le serveur (ProprietaireService::pourMotif) : le motif désigne le propriétaire, sans tenir compte de la casse.
+  const proprioPour = (motif: string) => db.proprietaires.find(o => o.motifs.some(m => m.toLowerCase() === motif.trim().toLowerCase()));
   const existing = db.produits.find(p => p.id === id);
-  const [p, setP] = useState<Produit>(existing ?? { id: uid('p_'), nom: '', type: 'Wax', motif: '', origine: '', yardsParPagne: 6, vendPagne: true, vendYard: true, prixPagne: 0, prixYard: 0, prixAchatPagne: 0 });
+  const [p, setP] = useState<Produit>(existing ?? {
+    id: uid('p_'), nom: '', type: 'Wax', motif: '', origine: '', yardsParPagne: 6,
+    vendPagne: params.autorisePagne, vendYard: params.autoriseYard, vendMetre: params.autoriseMetre,
+    prixPagne: 0, prixYard: 0, prixMetre: 0, prixAchatPagne: 0,
+  });
+  // Seuil proposé pour un nouveau coloris : 3 pagnes, exprimés dans l'unité de stock de la boutique.
+  const seuilDefaut = (prod: Produit) => quantitePour(prod, 'pagne', 3, uS);
   const [vars, setVars] = useState<VarForm[]>(() =>
-    existing ? db.variantes.filter(v => v.produitId === existing.id).map(v => ({ id: v.id, coloris: v.coloris, sku: v.sku, c1: v.c1, c2: v.c2, seuil: v.seuil })) : [{ coloris: '', sku: '', c1: '#E07A1F', c2: '#23306B', seuil: 18, stock: 0 }]);
+    existing ? db.variantes.filter(v => v.produitId === existing.id).map(v => ({ id: v.id, coloris: v.coloris, sku: v.sku, c1: v.c1, c2: v.c2, seuil: v.seuil })) : [{ coloris: '', sku: '', c1: '#E07A1F', c2: '#23306B', seuil: seuilDefaut(p), stock: 0 }]);
   const [autoYard, setAutoYard] = useState(!existing);
+  const [autoMetre, setAutoMetre] = useState(!existing || existing.prixMetre === 0);
   const [photo, setPhoto] = useState<PhotoChange | undefined>(); // undefined : photo inchangée
   const previews = useRef<string[]>([]);
   useEffect(() => () => previews.current.forEach(u => URL.revokeObjectURL(u)), []); // libère les aperçus locaux à la fermeture
   const up = <K extends keyof Produit>(k: K, val: Produit[K]) => setP(x => ({ ...x, [k]: val }));
+  const proprioDuMotif = proprioPour(p.motif);
   const suggest = (prixPagne: number, yards: number) => Math.round(((prixPagne / (yards || 1)) * 1.2) / 100) * 100;
+  const suggestMetre = (prixYard: number) => Math.round(prixYard / YARD_EN_METRES / 100) * 100;
+  /** Le prix au mètre suit le prix au yard tant qu'il n'a pas été saisi à la main. */
+  const setPrixYard = (n: number) => { up('prixYard', n); if (autoMetre) up('prixMetre', suggestMetre(n)); };
   const upVar = (i: number, patch: Partial<VarForm>) => setVars(a => a.map((v, k) => (k === i ? { ...v, ...patch } : v)));
   const onColoris = (i: number, name: string) => {
     const pre = COLORIS.find(c => c[0] === name);
@@ -203,31 +242,49 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
         <Field label={t('stock.nom')} className="span3"><input className="input" value={p.nom} onChange={e => up('nom', e.target.value)} required /></Field>
         <Field label={t('stock.type')}><select className="select" value={p.type} onChange={e => up('type', e.target.value)}>{TYPES.map(o => <option key={o}>{o}</option>)}</select></Field>
         <Field label={t('stock.motif')}><input className="input" value={p.motif} onChange={e => up('motif', e.target.value)} placeholder={t('stock.motifEx')} /></Field>
+        {params.multiProprietaires && (
+          <Field label={t('prop.proprietaire')} hint={p.proprietaireId ? undefined : proprioDuMotif ? t('prop.selonMotifHint', { nom: proprioDuMotif.nom }) : t('prop.sansRegle')}>
+            <select className="select" value={p.proprietaireId ?? ''} onChange={e => up('proprietaireId', e.target.value || undefined)}>
+              <option value="">{t('prop.selonMotif')}{proprioDuMotif ? ` (${proprioDuMotif.nom})` : ''}</option>
+              {db.proprietaires.filter(o => o.actif || o.id === p.proprietaireId).map(o => <option key={o.id} value={o.id}>{o.nom}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label={t('stock.origine')}><input className="input" value={p.origine} onChange={e => up('origine', e.target.value)} placeholder={t('stock.origineEx')} /></Field>
         <Field label={t('stock.yardsParPagne')} hint={t('stock.yardsParPagneHint')}>
-          <NumInput label={t('stock.yardsParPagne')} value={p.yardsParPagne} onChange={n => { up('yardsParPagne', n); if (autoYard) up('prixYard', suggest(p.prixPagne, n)); }} />
+          <NumInput label={t('stock.yardsParPagne')} value={p.yardsParPagne} onChange={n => { up('yardsParPagne', n); if (autoYard) setPrixYard(suggest(p.prixPagne, n)); }} />
         </Field>
         <fieldset className="span2 unites">
           <legend>{t('stock.unitesVendables')}</legend>
-          <label className="check"><input type="checkbox" checked={p.vendPagne} onChange={e => up('vendPagne', e.target.checked)} /> {t('unite.pagne')}</label>
-          <label className="check"><input type="checkbox" checked={p.vendYard} onChange={e => up('vendYard', e.target.checked)} /> {t('unite.yard')}</label>
+          {UNITES.map(u => {
+            const ok = autorise(params, u);
+            const champ = u === 'pagne' ? 'vendPagne' : u === 'yard' ? 'vendYard' : 'vendMetre';
+            return (
+              <label key={u} className="check" title={ok ? undefined : t('stock.uniteNonAutorisee')}>
+                <input type="checkbox" checked={p[champ] && ok} disabled={!ok} onChange={e => up(champ, e.target.checked)} /> {t('unite.' + u)}
+              </label>
+            );
+          })}
         </fieldset>
-        <Field label={t('stock.prixPagne')}><NumInput label={t('stock.prixPagne')} value={p.prixPagne} onChange={n => { up('prixPagne', n); if (autoYard) up('prixYard', suggest(n, p.yardsParPagne)); }} /></Field>
-        <Field label={t('stock.prixYard')} hint={t('stock.prixYardHint')}><NumInput label={t('stock.prixYard')} value={p.prixYard} onChange={n => { setAutoYard(false); up('prixYard', n); }} /></Field>
+        <Field label={t('stock.prixPagne')}><NumInput label={t('stock.prixPagne')} value={p.prixPagne} onChange={n => { up('prixPagne', n); if (autoYard) setPrixYard(suggest(n, p.yardsParPagne)); }} /></Field>
+        <Field label={t('stock.prixYard')} hint={t('stock.prixYardHint')}><NumInput label={t('stock.prixYard')} value={p.prixYard} onChange={n => { setAutoYard(false); setPrixYard(n); }} /></Field>
+        {params.autoriseMetre && (
+          <Field label={t('stock.prixMetre')} hint={t('stock.prixMetreHint')}><NumInput label={t('stock.prixMetre')} value={p.prixMetre} onChange={n => { setAutoMetre(false); up('prixMetre', n); }} /></Field>
+        )}
         <Field label={t('stock.prixAchatPagne')}><NumInput label={t('stock.prixAchatPagne')} value={p.prixAchatPagne} onChange={n => up('prixAchatPagne', n)} /></Field>
 
         <div className="span3">
-          <div className="panel-head tight"><h3>{t('stock.variantes')}</h3><button type="button" className="btn btn-sm" onClick={() => setVars(a => [...a, { coloris: '', sku: '', c1: '#1F8A5B', c2: '#F2C230', seuil: p.yardsParPagne * 3, stock: 0 }])}><LuPlus /> {t('stock.ajouterColoris')}</button></div>
+          <div className="panel-head tight"><h3>{t('stock.variantes')}</h3><button type="button" className="btn btn-sm" onClick={() => setVars(a => [...a, { coloris: '', sku: '', c1: '#1F8A5B', c2: '#F2C230', seuil: seuilDefaut(p), stock: 0 }])}><LuPlus /> {t('stock.ajouterColoris')}</button></div>
           <datalist id="coloris-list">{COLORIS.map(c => <option key={c[0]} value={c[0]} />)}</datalist>
           <div className="var-rows">
-            <div className="var-row var-head"><span>{t('stock.coloris')}</span><span>{t('stock.couleurs')}</span><span>{t('stock.sku')}</span><span>{t('stock.seuilYd')}</span><span>{t('stock.stockInitialYd')}</span><span></span></div>
+            <div className="var-row var-head"><span>{t('stock.coloris')}</span><span>{t('stock.couleurs')}</span><span>{t('stock.sku')}</span><span>{t('stock.seuilYd', { unite: uniteLabel(uS, 2) })}</span><span>{t('stock.stockInitialYd', { unite: uniteLabel(uS, 2) })}</span><span></span></div>
             {vars.map((v, i) => (
               <div className="var-row" key={v.id ?? 'n' + i}>
                 <input className="input" list="coloris-list" value={v.coloris} onChange={e => onColoris(i, e.target.value)} aria-label={t('stock.coloris')} />
                 <span className="colors"><input type="color" value={v.c1} onChange={e => upVar(i, { c1: e.target.value })} aria-label={t('stock.couleur1')} /><input type="color" value={v.c2} onChange={e => upVar(i, { c2: e.target.value })} aria-label={t('stock.couleur2')} /></span>
                 <input className="input" value={v.sku} onChange={e => upVar(i, { sku: e.target.value })} placeholder={t('stock.skuAuto')} aria-label={t('stock.sku')} />
-                <NumInput label={t('stock.seuilYd')} value={v.seuil} onChange={n => upVar(i, { seuil: n })} />
-                {v.id ? <span className="muted-s">{t('stock.viaEntree')}</span> : <NumInput label={t('stock.stockInitialYd')} value={v.stock ?? 0} onChange={n => upVar(i, { stock: n })} />}
+                <NumInput label={t('stock.seuilYd', { unite: uniteLabel(uS, 2) })} value={v.seuil} onChange={n => upVar(i, { seuil: n })} />
+                {v.id ? <span className="muted-s">{t('stock.viaEntree')}</span> : <NumInput label={t('stock.stockInitialYd', { unite: uniteLabel(uS, 2) })} value={v.stock ?? 0} onChange={n => upVar(i, { stock: n })} />}
                 <button type="button" className="icon-btn danger" onClick={() => setVars(a => a.filter((_, k) => k !== i))} aria-label={t('common.supprimer')}><LuTrash2 /></button>
               </div>
             ))}
@@ -256,7 +313,8 @@ function EntreeForm({ vid, onClose }: { vid: string; onClose: () => void }) {
   const [prix, setPrix] = useState(p.prixAchatPagne);
   const [motif, setMotif] = useState('');
   const suppliers = db.fournisseurs; // déjà saisis dans des entrées de stock (fournis par l'API)
-  const yards = yardsOf(p, unite, q);
+  const uS = db.parametres.uniteStock;
+  const ajout = quantitePour(p, unite, q, uS); // ce qui entre réellement en stock, dans l'unité de la boutique
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -265,25 +323,25 @@ function EntreeForm({ vid, onClose }: { vid: string; onClose: () => void }) {
     const r = await entreeStock({ varianteId: vid, quantite: q, unite, fournisseur, prixAchatPagne: prix, motif });
     setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
-    toast(t('stock.entreeOk', { n: num(yards) })); onClose();
+    toast(t('stock.entreeOk', { n: num(ajout), unite: uniteLabel(uS, ajout) })); onClose();
   };
   return (
     <Modal title={t('stock.entree')} onClose={onClose} size="sm"
       footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="entree-form" type="submit" disabled={busy}>{t('stock.enregistrerEntree')}</button></>}>
       <form id="entree-form" onSubmit={submit} className="form-col">
-        <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} yd</div></div></div>
+        <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} {uniteLabel(uS, v.stock)}</div></div></div>
         <div className="row-2">
           <Field label={t('stock.quantite')}><NumInput label={t('stock.quantite')} value={q} onChange={setQ} /></Field>
           <Field label={t('stock.unite')}>
             <select className="select" value={unite} onChange={e => setUnite(e.target.value as UniteVente)}>
-              <option value="pagne">{uniteLabel('pagne', 2)}</option><option value="yard">{uniteLabel('yard', 2)}</option>
+              {UNITES.map(u => <option key={u} value={u}>{uniteLabel(u, 2)}</option>)}
             </select>
           </Field>
         </div>
         <Field label={t('stock.fournisseur')}><input className="input" list="fournisseurs" value={fournisseur} onChange={e => setFournisseur(e.target.value)} /><datalist id="fournisseurs">{suppliers.map(s => <option key={s} value={s} />)}</datalist></Field>
         <Field label={t('stock.prixAchatPagne')}><NumInput label={t('stock.prixAchatPagne')} value={prix} onChange={setPrix} /></Field>
         <Field label={t('stock.note')}><input className="input" value={motif} onChange={e => setMotif(e.target.value)} /></Field>
-        {q > 0 && <p className="preview">{t('stock.apercuEntree', { y: num(yards), s: num(r2(v.stock + yards)) })}</p>}
+        {q > 0 && <p className="preview">{t('stock.apercuEntree', { y: num(ajout), s: num(r2(v.stock + ajout)), unite: uniteLabel(uS, 2) })}</p>}
       </form>
     </Modal>
   );
@@ -292,7 +350,8 @@ function EntreeForm({ vid, onClose }: { vid: string; onClose: () => void }) {
 function AjustForm({ vid, onClose }: { vid: string; onClose: () => void }) {
   const { ajusterStock } = useApp();
   const { toast } = useUI();
-  const { v, p } = useVar(vid);
+  const { db, v, p } = useVar(vid);
+  const unite = uniteLabel(db.parametres.uniteStock, 2);
   const [n, setN] = useState(v.stock);
   const [motif, setMotif] = useState('');
   const delta = r2(n - v.stock);
@@ -310,10 +369,10 @@ function AjustForm({ vid, onClose }: { vid: string; onClose: () => void }) {
     <Modal title={t('stock.ajuster')} onClose={onClose} size="sm"
       footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="ajust-form" type="submit" disabled={busy}>{t('common.enregistrer')}</button></>}>
       <form id="ajust-form" onSubmit={submit} className="form-col">
-        <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} yd</div></div></div>
-        <Field label={t('stock.stockCompte')}><NumInput label={t('stock.stockCompte')} value={n} onChange={setN} /></Field>
+        <div className="recap"><Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={44} /><div><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris} · {t('stock.stockActuel')} {num(v.stock)} {unite}</div></div></div>
+        <Field label={t('stock.stockCompte', { unite })}><NumInput label={t('stock.stockCompte', { unite })} value={n} onChange={setN} /></Field>
         <Field label={t('stock.motifAjust')}><input className="input" list="motifs-ajust" value={motif} onChange={e => setMotif(e.target.value)} required /><datalist id="motifs-ajust">{[t('stock.m1'), t('stock.m2'), t('stock.m3'), t('stock.m4')].map(m => <option key={m} value={m} />)}</datalist></Field>
-        {delta !== 0 && <p className="preview">{t('stock.ecart', { d: (delta > 0 ? '+' : '') + num(delta) })}</p>}
+        {delta !== 0 && <p className="preview">{t('stock.ecart', { d: (delta > 0 ? '+' : '') + num(delta), unite })}</p>}
       </form>
     </Modal>
   );

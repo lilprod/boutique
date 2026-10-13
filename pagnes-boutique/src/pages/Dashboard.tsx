@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import type { ModePaiement } from '../types';
 import { useApp } from '../store';
-import { t } from '../i18n';
+import { t, uniteLabel } from '../i18n';
 import { Link } from '../router';
-import { Badge, Segmented, Swatch } from '../components/ui';
+import { Badge, CountUp, Empty, Segmented, Skeleton, Swatch } from '../components/ui';
 import { BarList, LineChart } from '../components/Charts';
 import { fcfa, fmtDateTime, fmtDayShort, num, numeroVente } from '../lib/format';
 import { statutStock } from '../lib/calc';
@@ -19,8 +19,8 @@ interface Stats {
 }
 
 export default function Dashboard() {
-  const { db, user } = useApp();
-  const admin = user!.role === 'admin';
+  const { db, user, shopMode } = useApp();
+  const admin = user!.role === 'admin' || user!.role === 'boutique_admin' || (user!.role === 'tenant_admin' && shopMode);
   const [range, setRange] = useState<'7' | '30'>('7');
   const stats = useFetch<Stats>('/tableau-de-bord');
   const s = stats.data;
@@ -41,10 +41,10 @@ export default function Dashboard() {
       )}
 
       <section className="panel kpis" aria-label={t('dash.indicateurs')} aria-busy={stats.loading}>
-        <div><span className="kpi-l">{admin ? t('dash.ventesJour') : t('dash.mesVentesJour')}</span><span className="kpi-v">{s ? s.jour.ventes : '—'}</span></div>
-        <div><span className="kpi-l">{t('dash.caJour')}</span><span className="kpi-v">{s ? fcfa(s.jour.ca) : '—'}</span></div>
-        {admin && <div><span className="kpi-l">{t('dash.margeJour')}</span><span className="kpi-v green">{s ? fcfa(s.jour.marge ?? 0) : '—'}</span></div>}
-        <div><span className="kpi-l">{t('dash.alertes')}</span><span className={'kpi-v ' + (alertes.length ? 'red' : '')}>{alertes.length}</span></div>
+        <div><span className="kpi-l">{admin ? t('dash.ventesJour') : t('dash.mesVentesJour')}</span><span className="kpi-v">{s ? <CountUp value={s.jour.ventes} /> : <Skeleton w={56} h={26} />}</span></div>
+        <div><span className="kpi-l">{t('dash.caJour')}</span><span className="kpi-v">{s ? <CountUp value={s.jour.ca} format={fcfa} /> : <Skeleton w={140} h={26} />}</span></div>
+        {admin && <div><span className="kpi-l">{t('dash.margeJour')}</span><span className="kpi-v green">{s ? <CountUp value={s.jour.marge ?? 0} format={fcfa} /> : <Skeleton w={120} h={26} />}</span></div>}
+        <div><span className="kpi-l">{t('dash.alertes')}</span><span className={'kpi-v ' + (alertes.length ? 'red' : '')}><CountUp value={alertes.length} /></span></div>
       </section>
 
       <div className="grid-2">
@@ -53,11 +53,13 @@ export default function Dashboard() {
             <h2>{t('dash.courbe')}</h2>
             <Segmented label={t('dash.periode')} value={range} onChange={setRange} options={[{ v: '7', label: t('dash.7j') }, { v: '30', label: t('dash.30j') }]} />
           </div>
-          {s ? <LineChart data={serie} ariaLabel={t('dash.courbe')} /> : <p className="muted-p" role="status">{stats.loading ? t('app.chargement') : '—'}</p>}
+          {s ? <LineChart data={serie} ariaLabel={t('dash.courbe')} /> : stats.loading
+            ? <div role="status" className="chart-skel"><span className="sr-only">{t('app.chargement')}</span><Skeleton w={130} h={22} /><Skeleton h={180} r={10} /></div>
+            : <p className="muted-p">—</p>}
         </section>
         <section className="panel">
           <div className="panel-head"><h2>{t('dash.alertesStock')}</h2><Link to="/stock" className="link">{t('dash.voirStock')}</Link></div>
-          {alertes.length === 0 ? <p className="muted-p">{t('dash.aucuneAlerte')}</p> : (
+          {alertes.length === 0 ? <Empty title={t('dash.aucuneAlerte')} /> : (
             <ul className="alert-list">
               {alertes.slice(0, 6).map(v => {
                 const p = prodOf(v.produitId)!;
@@ -65,7 +67,7 @@ export default function Dashboard() {
                   <li key={v.id}>
                     <Swatch c1={v.c1} c2={v.c2} seed={p.id} image={p.image} size={34} />
                     <div className="grow"><div className="strong">{p.nom}</div><div className="muted-s">{v.coloris}</div></div>
-                    <div className="right"><div>{num(v.stock)} yd</div><Badge kind={v.stock <= 0 ? 'bad' : 'warn'}>{v.stock <= 0 ? t('stock.rupture') : t('stock.bas')}</Badge></div>
+                    <div className="right"><div className="tnum">{num(v.stock)} {uniteLabel(db.parametres.uniteStock, v.stock)}</div><Badge kind={v.stock <= 0 ? 'bad' : 'warn'}>{v.stock <= 0 ? t('stock.rupture') : t('stock.bas')}</Badge></div>
                   </li>
                 );
               })}

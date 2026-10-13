@@ -9,6 +9,7 @@ use App\Services\VenteService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\Rule;
 
 class VenteController extends Controller
 {
@@ -17,8 +18,11 @@ class VenteController extends Controller
     public function index(Request $request)
     {
         // `vendeur:id,nom` : jamais l'identifiant de connexion ni le rôle d'un collègue.
-        $q = Vente::with('lignes', 'client', 'vendeur:id,nom')->latest()->latest('id'); // id : départage les ventes de la même seconde
-        if (!$request->user()->estAdmin()) {
+        $q = Vente::query()
+            ->forCurrentTenant($request->user())
+            ->forCurrentBoutique($request->user())
+            ->with('lignes', 'client', 'vendeur:id,nom')->latest()->latest('id'); // id : départage les ventes de la même seconde
+        if (! $request->user()->estAdmin()) {
             $q->where('vendeur_id', $request->user()->id); // un vendeur ne voit que ses propres ventes
         }
         $filtres = $request->validate([
@@ -27,20 +31,29 @@ class VenteController extends Controller
             'du' => 'nullable|date',
             'au' => 'nullable|date',
         ]);
-        if (!empty($filtres['statut'])) $q->where('statut', $filtres['statut']);
-        if (!empty($filtres['du'])) $q->where('created_at', '>=', Carbon::parse($filtres['du'])->startOfDay());
-        if (!empty($filtres['au'])) $q->where('created_at', '<=', Carbon::parse($filtres['au'])->endOfDay());
-        if (!empty($filtres['q'])) $this->recherche($q, trim($filtres['q']));
+        if (! empty($filtres['statut'])) {
+            $q->where('statut', $filtres['statut']);
+        }
+        if (! empty($filtres['du'])) {
+            $q->where('created_at', '>=', Carbon::parse($filtres['du'])->startOfDay());
+        }
+        if (! empty($filtres['au'])) {
+            $q->where('created_at', '<=', Carbon::parse($filtres['au'])->endOfDay());
+        }
+        if (! empty($filtres['q'])) {
+            $this->recherche($q, trim($filtres['q']));
+        }
         // per_page (1-200) : l'écran « Ventes » lit l'historique page par page.
         $page = $q->paginate(max(1, min(200, $request->integer('per_page', 50))));
         $page->getCollection()->each(fn (Vente $v) => $this->masquerCouts($v, $request));
+
         return $page;
     }
 
     /** Recherche libre : numéro (« V-00012 » ou « 12 »), client, vendeur, article, coloris ou référence de paiement. */
     private function recherche(Builder $q, string $mot): void
     {
-        $like = '%' . addcslashes($mot, '%_\\') . '%';
+        $like = '%'.addcslashes($mot, '%_\\').'%';
         $q->where(function (Builder $w) use ($mot, $like) {
             $w->where('paiement_reference', 'like', $like)
                 ->orWhereHas('client', fn (Builder $c) => $c->where('nom', 'like', $like))
@@ -54,24 +67,31 @@ class VenteController extends Controller
 
     public function show(Request $request, Vente $vente)
     {
+        abort_unless($vente->belongsToCurrentContext($request->user()), 404);
         abort_unless($request->user()->estAdmin() || $vente->vendeur_id === $request->user()->id, 403, 'Cette vente ne vous appartient pas.');
+
         return $this->masquerCouts($vente->load('lignes', 'client', 'vendeur:id,nom'), $request);
     }
 
     /** La marge et le coût d'achat ne sont visibles que de l'administrateur. */
     private function masquerCouts(Vente $vente, Request $request): Vente
     {
-        if (!$request->user()->estAdmin()) {
+        if (! $request->user()->estAdmin()) {
             $vente->makeHidden('marge');
             $vente->lignes->each->makeHidden('cout');
         }
+
         return $vente;
     }
 
     public function store(Request $request)
     {
         $data = $request->validate([
-            'client_id' => 'nullable|integer|exists:clients,id',
+            'client_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('clients', 'id')->where('tenant_id', $request->user()->tenant_id)->where('boutique_id', $request->user()->boutique_id),
+            ],
             'remise_type' => 'required|in:pct,fcfa',
             'remise_valeur' => 'required|numeric|min:0',
             'paiement.mode' => 'required|in:especes,flooz,tmoney,carte',
@@ -79,10 +99,11 @@ class VenteController extends Controller
             'paiement.recu' => 'nullable|integer|min:0',
             'lignes' => 'required|array|min:1',
             'lignes.*.variante_id' => 'required|integer|exists:variantes,id',
-            'lignes.*.unite' => 'required|in:pagne,yard',
+            'lignes.*.unite' => 'required|in:pagne,yard,metre',
             'lignes.*.quantite' => 'required|numeric|min:0.01',
             'lignes.*.remise_type' => 'nullable|in:pct,fcfa',
             'lignes.*.remise_valeur' => 'nullable|numeric|min:0',
+            'points_utilises' => 'nullable|integer|min:0|max:100000000',
         ]);
 
         $cart = array_map(fn ($l) => [
@@ -93,8 +114,9 @@ class VenteController extends Controller
         try {
             $vente = $this->service->valider(
                 $request->user(), $cart, $data['client_id'] ?? null,
-                $data['remise_type'], (float) $data['remise_valeur'], $data['paiement']
+                $data['remise_type'], (float) $data['remise_valeur'], $data['paiement'], (int) ($data['points_utilises'] ?? 0)
             );
+
             return response()->json($this->masquerCouts($vente, $request), 201);
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -103,9 +125,12 @@ class VenteController extends Controller
 
     public function annuler(Request $request, Vente $vente)
     {
+        abort_unless($vente->belongsToCurrentContext($request->user()), 404);
+
         $data = $request->validate(['motif' => 'required|string|max:190']);
         try {
             $vente = $this->service->annuler($vente, $request->user(), $data['motif']);
+
             return response()->json($vente);
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

@@ -34,13 +34,16 @@ const UI = createContext<UICtx | null>(null);
 export const useUI = () => { const c = useContext(UI); if (!c) throw new Error('UIProvider manquant'); return c; };
 
 export function UIProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<{ id: number; m: string; kind: 'ok' | 'err' }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; m: string; kind: 'ok' | 'err'; leaving?: boolean }[]>([]);
   const [dlg, setDlg] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
   const n = useRef(0);
   const toast = useCallback((m: string, kind: 'ok' | 'err' = 'ok') => {
     const id = ++n.current;
     setToasts(x => [...x, { id, m, kind }]);
-    setTimeout(() => setToasts(x => x.filter(y => y.id !== id)), kind === 'err' ? 6000 : 3200);
+    const life = kind === 'err' ? 6000 : 3200;
+    // Sortie animée : le toast est marqué « leaving » puis retiré une fois l'animation terminée.
+    setTimeout(() => setToasts(x => x.map(y => (y.id === id ? { ...y, leaving: true } : y))), life);
+    setTimeout(() => setToasts(x => x.filter(y => y.id !== id)), life + (reducedMotion() ? 0 : 220));
   }, []);
   const confirm = useCallback((o: ConfirmOpts) => new Promise<boolean>(resolve => setDlg({ ...o, resolve })), []);
   const close = (v: boolean) => { dlg?.resolve(v); setDlg(null); };
@@ -49,7 +52,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map(x => (
-          <div key={x.id} className={'toast ' + x.kind}>{x.kind === 'ok' ? <LuCheck /> : <LuTriangleAlert />}<span>{x.m}</span></div>
+          <div key={x.id} className={cls('toast', x.kind, x.leaving && 'leaving')}>{x.kind === 'ok' ? <LuCheck /> : <LuTriangleAlert />}<span>{x.m}</span></div>
         ))}
       </div>
       {dlg && (
@@ -83,17 +86,83 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 }
 
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
-  return <div className="empty"><p>{title}</p>{children}</div>;
+  return <div className="empty"><span className="empty-mark" aria-hidden="true" /><p>{title}</p>{children}</div>;
+}
+
+/* ---------- Mouvement ---------- */
+/** Vrai si l'utilisateur a demandé de réduire les animations (réglage du système). */
+export const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Joue une courte animation de sortie sur `el` (opacité + translation), puis appelle `done`. Sans animation si le mouvement est réduit. */
+export function animateOut(el: Element | null | undefined, done: () => void) {
+  if (!el || reducedMotion() || typeof (el as HTMLElement).animate !== 'function') return done();
+  const a = (el as HTMLElement).animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(14px)' }], { duration: 170, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+  a.onfinish = done;
+  a.oncancel = done;
+}
+
+/** Fait « pulser » son contenu quand `value` change (pas au premier rendu) : retour visuel sur un compteur. */
+export function Bump({ value, className, children }: { value: unknown; className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const el = ref.current;
+    if (!el || reducedMotion() || typeof el.animate !== 'function') return;
+    el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.28)' }, { transform: 'scale(1)' }], { duration: 280, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+  }, [value]);
+  return <span ref={ref} className={className}>{children}</span>;
+}
+
+/** Nombre qui défile jusqu'à sa nouvelle valeur (≈ 450 ms). La valeur finale est exposée aux lecteurs d'écran. */
+export function CountUp({ value, format = String }: { value: number; format?: (n: number) => string }) {
+  const [shown, setShown] = useState(reducedMotion() ? value : 0);
+  const from = useRef(shown);
+  useEffect(() => {
+    if (reducedMotion()) { setShown(value); from.current = value; return; }
+    const start = performance.now(), a = from.current, d = 450;
+    let raf = 0;
+    const tick = (now: number) => {
+      const k = Math.min(1, (now - start) / d);
+      const v = a + (value - a) * (1 - Math.pow(1 - k, 3));
+      setShown(v); from.current = v;
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <><span aria-hidden="true">{format(Math.round(shown))}</span><span className="sr-only">{format(value)}</span></>;
+}
+
+/* ---------- Squelettes de chargement ---------- */
+export function Skeleton({ w = '100%', h = 14, r, className }: { w?: number | string; h?: number | string; r?: number; className?: string }) {
+  return <span className={cls('skel', className)} style={{ width: w, height: h, borderRadius: r }} aria-hidden="true" />;
+}
+
+/** Lignes de tableau fictives pendant un chargement (annoncé une seule fois aux lecteurs d'écran). */
+export function SkeletonRows({ rows = 5, label }: { rows?: number; label: string }) {
+  return (
+    <div className="skel-rows" role="status" aria-live="polite">
+      <span className="sr-only">{label}</span>
+      {Array.from({ length: rows }, (_, i) => (
+        <div className="skel-row" key={i} style={{ opacity: 1 - i * 0.12 }}>
+          <Skeleton w={36} h={36} r={8} />
+          <div className="grow" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}><Skeleton w={`${55 + ((i * 17) % 30)}%`} h={12} /><Skeleton w="30%" h={10} /></div>
+          <Skeleton w={72} h={12} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** Nombre décimal saisi au clavier (virgule ou point), avec boutons − / +. */
-export function NumInput({ value, onChange, step = 0.5, min = 0, stepper = false, label, className }: { value: number; onChange: (n: number) => void; step?: number; min?: number; stepper?: boolean; label: string; className?: string }) {
+export function NumInput({ value, onChange, step = 0.5, min = 0, stepper = false, label, className, disabled }: { value: number; onChange: (n: number) => void; step?: number; min?: number; stepper?: boolean; label: string; className?: string; disabled?: boolean }) {
   const show = (n: number) => (n === 0 ? '' : String(n).replace('.', ','));
   const [txt, setTxt] = useState(show(value));
   const parse = (s: string) => { const c = s.replace(',', '.').trim(); return c === '' ? 0 : /^\d*\.?\d*$/.test(c) ? parseFloat(c) || 0 : null; };
   useEffect(() => { if (parse(txt) !== value) setTxt(show(value)); /* eslint-disable-next-line */ }, [value]);
   const input = (
-    <input className={cls('input num', className)} inputMode="decimal" aria-label={label} value={txt}
+    <input className={cls('input num', className)} inputMode="decimal" aria-label={label} value={txt} disabled={disabled}
       onChange={e => { setTxt(e.target.value); const n = parse(e.target.value); if (n !== null) onChange(n); }}
       onBlur={() => setTxt(show(value))} onFocus={e => e.target.select()} />
   );
@@ -110,10 +179,10 @@ export function NumInput({ value, onChange, step = 0.5, min = 0, stepper = false
 
 /** Aperçu d'étoffe : image du produit, sinon un motif généré à partir des deux couleurs du coloris. */
 export function Swatch({ c1, c2, seed, image, size = 40 }: { c1: string; c2: string; seed: string; image?: string; size?: number }) {
-  if (image) return <img className="swatch" src={image} alt="" width={size} height={size} style={{ width: size, height: size }} />;
+  if (image) return <img className="swatch" src={image} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" decoding="async" />;
   const k = hash(seed) % 4;
   return (
-    <svg className="swatch" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+    <svg className="swatch" width={size} height={size} viewBox="0 0 40 40" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <rect width="40" height="40" fill={c1} />
       {k === 0 && <g fill={c2}>{[[10, 10], [30, 10], [10, 30], [30, 30]].map(([x, y]) => <circle key={x + '-' + y} cx={x} cy={y} r="5" />)}<circle cx="20" cy="20" r="3.5" /></g>}
       {k === 1 && <g fill={c2}>{[4, 14, 24, 34].map(x => <rect key={x} x={x} y="0" width="4" height="40" />)}</g>}
