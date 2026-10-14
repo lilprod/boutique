@@ -91,14 +91,15 @@ function Stat({ icon, label, value, format, hint, tone = 'brand', i = 0 }: { ico
   );
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
+/** « 1 boutique » / « 3 boutiques » : clés `base.1` et `base.n` du dictionnaire. */
+const pl = (n: number, base: string) => t(`${base}.${n > 1 ? 'n' : '1'}`, { n: String(n) });
 
 /** Modes d'encaissement acceptés par l'API (le mode « manual » des anciennes données n'est plus proposé). */
 const MODES = [
-  { v: 'cash', label: 'Espèces', ref: 'N° du reçu remis au client' },
-  { v: 'card', label: 'Carte bancaire', ref: 'N° d’autorisation du ticket carte' },
-  { v: 'tmoney', label: 'T-Money', ref: 'ID de la transaction T-Money' },
-  { v: 'flooz', label: 'Flooz', ref: 'ID de la transaction Flooz' },
+  { v: 'cash', label: 'billing.method.cash', ref: 'sa.ref.cash' },
+  { v: 'card', label: 'sa.mode.card', ref: 'sa.ref.card' },
+  { v: 'tmoney', label: 'billing.method.tmoney', ref: 'sa.ref.tmoney' },
+  { v: 'flooz', label: 'billing.method.flooz', ref: 'sa.ref.flooz' },
 ] as const;
 
 /** Date de fin après renouvellement, calculée comme l'API : depuis la fin en cours si elle n'est pas passée. */
@@ -113,20 +114,16 @@ function finApresRenouvellement(finActuelle: string | undefined, periodes: numbe
 
 const VIEWS = {
   overview: {
-    eyebrow: 'Console plateforme', title: 'Pilotage de la plateforme',
-    sub: 'La santé de votre activité SaaS en un coup d’œil : entreprises clientes, abonnements, licences à renouveler et encaissements.',
+    eyebrow: 'sa.v.overview.eyebrow', title: 'sa.v.overview.title', sub: 'sa.v.overview.sub',
   },
   tenants: {
-    eyebrow: 'Clients', title: 'Entreprises clientes',
-    sub: 'Inscrivez une nouvelle entreprise avec sa première boutique, attribuez-lui une formule et gérez l’état de son abonnement.',
+    eyebrow: 'sa.v.tenants.eyebrow', title: 'sa.v.tenants.title', sub: 'sa.v.tenants.sub',
   },
   payments: {
-    eyebrow: 'Facturation', title: 'Paiements et factures',
-    sub: 'Encaissez les renouvellements (espèces, carte, T-Money, Flooz) avec leur référence de contrôle, téléchargez factures et justificatifs, exportez la comptabilité.',
+    eyebrow: 'sa.v.payments.eyebrow', title: 'sa.v.payments.title', sub: 'sa.v.payments.sub',
   },
   plans: {
-    eyebrow: 'Catalogue', title: 'Formules d’abonnement',
-    sub: 'Définissez les offres vendues aux boutiques : prix, nombre de boutiques et d’utilisateurs inclus, modules ouverts.',
+    eyebrow: 'sa.v.plans.eyebrow', title: 'sa.v.plans.title', sub: 'sa.v.plans.sub',
   },
 } as const;
 
@@ -162,7 +159,7 @@ export default function SuperAdminDashboard() {
       setPaymentTenants(tenants);
       setError(null);
     } catch (e: any) {
-      setError(e?.message ?? 'Impossible de charger la console d’administration.');
+      setError(e?.message ?? t('sa.err.chargement'));
     } finally {
       setLoading(false);
     }
@@ -183,11 +180,11 @@ export default function SuperAdminDashboard() {
         features: planForm.features.split(',').map(item => item.trim()).filter(Boolean),
         actif: planForm.actif,
       });
-      setStatus({ type: 'ok', msg: 'Formule créée : elle est proposée dès maintenant aux entreprises.' });
+      setStatus({ type: 'ok', msg: t('sa.ok.formule') });
       setPlanForm({ ...planForm, nom: '', slug: '', prix: '0', max_boutiques: '1', max_utilisateurs: '5', features: 'stock,ventes,users' });
       await reload();
     } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message ?? 'Erreur lors de la création de la formule.' });
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.formule') });
     }
   };
 
@@ -213,11 +210,11 @@ export default function SuperAdminDashboard() {
         });
       }
 
-      setStatus({ type: 'ok', msg: 'Entreprise inscrite avec sa première boutique.' });
+      setStatus({ type: 'ok', msg: t('sa.ok.entreprise') });
       setTenantForm({ nom: '', slug: '', boutiqueNom: '', boutiqueAdresse: '', boutiqueTelephone: '', planId: '', paymentMethod: 'cash', paymentReference: '' });
       await reload();
     } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message ?? 'Erreur lors de l’inscription de l’entreprise.' });
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.entreprise') });
     }
   };
 
@@ -227,10 +224,10 @@ export default function SuperAdminDashboard() {
         status: nextStatus,
         license_status: nextStatus === 'cancelled' ? 'suspended' : nextStatus === 'expired' ? 'expired' : 'active',
       });
-      setStatus({ type: 'ok', msg: `Abonnement mis à jour : ${t(`billing.status.${nextStatus}`)}.` });
+      setStatus({ type: 'ok', msg: t('sa.ok.statut', { statut: t(`billing.status.${nextStatus}`) }) });
       await reload();
     } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message ?? 'Erreur lors de la mise à jour du statut.' });
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.statut') });
     }
   };
 
@@ -275,16 +272,16 @@ export default function SuperAdminDashboard() {
     try {
       if (paymentForm.prolonger) {
         await post(`/super-admin/tenants/${paymentForm.tenantId}/renouvellements`, form);
-        setStatus({ type: 'ok', msg: `Paiement encaissé : licence de ${tenantChoisi?.nom ?? 'l’entreprise'} prolongée${nouvelleFin ? ` jusqu’au ${fmtDate(nouvelleFin.toISOString())}` : ''}. Facture générée.` });
+        setStatus({ type: 'ok', msg: nouvelleFin ? t('sa.ok.renouvele', { nom: tenantChoisi?.nom ?? t('sa.lEntreprise'), d: fmtDate(nouvelleFin.toISOString()) }) : t('sa.ok.renouveleSansDate', { nom: tenantChoisi?.nom ?? t('sa.lEntreprise') }) });
       } else {
         await post(`/super-admin/tenants/${paymentForm.tenantId}/payments`, form);
-        setStatus({ type: 'ok', msg: 'Paiement enregistré et facture générée (licence inchangée).' });
+        setStatus({ type: 'ok', msg: t('sa.ok.paiement') });
       }
       setPaymentForm(PAIEMENT_VIDE);
       setPaymentAttachment(null);
       await reload();
     } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message ?? 'Erreur lors de l’enregistrement du paiement.' });
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.paiement') });
     }
   };
 
@@ -298,7 +295,7 @@ export default function SuperAdminDashboard() {
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message ?? 'Téléchargement impossible.' });
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.telechargement') });
     }
   };
 
@@ -316,9 +313,9 @@ export default function SuperAdminDashboard() {
   const pageHead = (actions?: React.ReactNode) => (
     <div className="page-head">
       <div>
-        <span className="eyebrow">{head.eyebrow}</span>
-        <h1>{head.title}</h1>
-        <p className="muted-p page-sub">{head.sub}</p>
+        <span className="eyebrow">{t(head.eyebrow)}</span>
+        <h1>{t(head.title)}</h1>
+        <p className="muted-p page-sub">{t(head.sub)}</p>
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </div>
@@ -342,13 +339,13 @@ export default function SuperAdminDashboard() {
         {pageHead()}
         <div className="panel state-box" role="alert">
           <span className="state-icon bad"><LuCircleAlert /></span>
-          <div className="grow"><h2>La console n’a pas pu être chargée</h2><p className="muted-p">{error}</p></div>
+          <div className="grow"><h2>{t('sa.err.titre')}</h2><p className="muted-p">{error}</p></div>
           <button className="btn" onClick={() => void reload()}>{t('common.reessayer')}</button>
         </div>
       </>
     );
   }
-  if (!data) return <>{pageHead()}<div className="panel"><Empty title="Aucun indicateur disponible pour le moment." /></div></>;
+  if (!data) return <>{pageHead()}<div className="panel"><Empty title={t('sa.aucunIndicateur')} /></div></>;
 
   const tt = data.totals;
   const pt = payments?.totals ?? {};
@@ -368,10 +365,10 @@ export default function SuperAdminDashboard() {
   const docButtons = (payment: PaymentSummary) => (
     <div className="row-actions">
       {/* Icônes seules : le tableau des paiements a déjà 7 colonnes à côté du formulaire. */}
-      <button className="icon-btn" type="button" onClick={() => void downloadBlob(`/super-admin/payments/${payment.id}/invoice`, `${payment.invoice_number ?? `facture-${payment.id}`}.html`)} title="Télécharger la facture (HTML)" aria-label="Télécharger la facture">
+      <button className="icon-btn" type="button" onClick={() => void downloadBlob(`/super-admin/payments/${payment.id}/invoice`, `${payment.invoice_number ?? `facture-${payment.id}`}.html`)} title={t('sa.dl.facture')} aria-label={t('sa.dl.factureCourt')}>
         <LuFileText />
       </button>
-      {payment.has_attachment && <button className="icon-btn" type="button" onClick={() => void downloadBlob(`/super-admin/payments/${payment.id}/attachment`, payment.attachment_name ?? `justificatif-${payment.id}`)} title="Télécharger le justificatif du client" aria-label="Télécharger le justificatif"><LuPaperclip /></button>}
+      {payment.has_attachment && <button className="icon-btn" type="button" onClick={() => void downloadBlob(`/super-admin/payments/${payment.id}/attachment`, payment.attachment_name ?? `justificatif-${payment.id}`)} title={t('sa.dl.justif')} aria-label={t('sa.dl.justifCourt')}><LuPaperclip /></button>}
     </div>
   );
 
@@ -379,7 +376,7 @@ export default function SuperAdminDashboard() {
     <div className="table-wrap">
       <table className="tbl">
         <thead><tr>
-          {!compact && <th>Date</th>}<th>Entreprise</th>{!compact && <th>Formule</th>}<th className="r">Montant</th><th>Moyen</th><th>Statut</th>{!compact && <th>Documents</th>}
+          {!compact && <th>{t('tp.col.date')}</th>}<th>{t('sa.col.entreprise')}</th>{!compact && <th>{t('tp.col.formule')}</th>}<th className="r">{t('tp.col.montant')}</th><th>{t('tp.col.moyen')}</th><th>{t('tp.col.statut')}</th>{!compact && <th>{t('tp.col.documents')}</th>}
         </tr></thead>
         <tbody>
           {rows.map((payment) => (
@@ -406,27 +403,27 @@ export default function SuperAdminDashboard() {
       {view === 'overview' && (
         <>
           {pageHead(<>
-            <Link to="/paiements" className="btn"><LuWallet /> Encaisser un renouvellement</Link>
-            <Link to="/tenants" className="btn btn-primary"><LuPlus /> Inscrire une entreprise</Link>
+            <Link to="/paiements" className="btn"><LuWallet /> {t('sa.encaisser')}</Link>
+            <Link to="/tenants" className="btn btn-primary"><LuPlus /> {t('sa.inscrire')}</Link>
           </>)}
           {notice}
 
           <div className="stat-grid">
-            <Stat i={0} tone="brand" icon={<LuBuilding2 />} label="Entreprises clientes" value={tt.total_tenants ?? 0} hint={`${plural(tt.active_tenants ?? 0, 'active', 'actives')} sur la plateforme`} />
-            <Stat i={1} tone="green" icon={<LuStore />} label="Boutiques équipées" value={tt.total_boutiques ?? 0} hint="Points de vente qui utilisent la caisse" />
-            <Stat i={2} tone="gold" icon={<LuBadgeCheck />} label="Abonnements actifs" value={tt.active_subscriptions ?? 0} hint={`+ ${tt.trial_subscriptions ?? 0} en période d’essai`} />
-            <Stat i={3} tone="terra" icon={<LuTrendingUp />} label="Revenu mensuel récurrent" value={tt.mrr ?? 0} format={fcfa} hint="Ce que rapportent les abonnements chaque mois" />
+            <Stat i={0} tone="brand" icon={<LuBuilding2 />} label={t('sa.stat.entreprises')} value={tt.total_tenants ?? 0} hint={pl(tt.active_tenants ?? 0, 'sa.activesPlateforme')} />
+            <Stat i={1} tone="green" icon={<LuStore />} label={t('sa.stat.boutiques')} value={tt.total_boutiques ?? 0} hint={t('sa.stat.boutiquesHint')} />
+            <Stat i={2} tone="gold" icon={<LuBadgeCheck />} label={t('sa.stat.abonnements')} value={tt.active_subscriptions ?? 0} hint={t('sa.stat.plusEssai', { n: String(tt.trial_subscriptions ?? 0) })} />
+            <Stat i={3} tone="terra" icon={<LuTrendingUp />} label={t('sa.stat.mrr')} value={tt.mrr ?? 0} format={fcfa} hint={t('sa.stat.mrrHint')} />
           </div>
 
           <div className="sa-grid">
             <section className="panel">
               <div className="panel-head">
-                <div><h2>Dernières entreprises inscrites</h2><p className="panel-sub">Formule choisie et état du compte de chaque client.</p></div>
-                <Link to="/tenants" className="link">Toutes les entreprises <LuArrowRight className="link-arrow" /></Link>
+                <div><h2>{t('sa.dernieres')}</h2><p className="panel-sub">{t('sa.dernieresSous')}</p></div>
+                <Link to="/tenants" className="link">{t('sa.toutes')} <LuArrowRight className="link-arrow" /></Link>
               </div>
               {data.tenants.length === 0 ? (
-                <Empty title="Aucune entreprise cliente pour l’instant.">
-                  <Link to="/tenants" className="btn btn-sm btn-primary"><LuPlus /> Inscrire la première</Link>
+                <Empty title={t('sa.aucuneEntreprise')}>
+                  <Link to="/tenants" className="btn btn-sm btn-primary"><LuPlus /> {t('sa.inscrirePremiere')}</Link>
                 </Empty>
               ) : (
                 <ul className="entity-list">
@@ -435,7 +432,7 @@ export default function SuperAdminDashboard() {
                       <Avatar name={tenant.nom} />
                       <div className="grow">
                         <div className="strong ellipsis">{tenant.nom}</div>
-                        <div className="muted-s">{tenant.subscription?.plan?.nom ?? 'Sans formule'} · {plural(tenant.boutiques?.length ?? 0, 'boutique', 'boutiques')}</div>
+                        <div className="muted-s">{tenant.subscription?.plan?.nom ?? t('sa.sansFormule')} · {pl(tenant.boutiques?.length ?? 0, 'sa.boutiques')}</div>
                       </div>
                       <StatusBadge status={tenant.statut} />
                     </li>
@@ -446,31 +443,31 @@ export default function SuperAdminDashboard() {
 
             <section className="panel">
               <div className="panel-head">
-                <div><h2>À surveiller</h2><p className="panel-sub">Comptes à relancer avant qu’ils ne perdent l’accès.</p></div>
-                {toWatch > 0 ? <span className="badge warn">{plural(toWatch, 'licence', 'licences')}</span> : <span className="badge ok">Tout est en ordre</span>}
+                <div><h2>{t('sa.surveiller')}</h2><p className="panel-sub">{t('sa.surveillerSous')}</p></div>
+                {toWatch > 0 ? <span className="badge warn">{pl(toWatch, 'sa.licences')}</span> : <span className="badge ok">{t('sa.enOrdre')}</span>}
               </div>
               <ul className="watch-list">
                 <li className={cls((tt.expiring_licenses ?? 0) > 0 && 'warn')}>
                   <span className="state-icon warn"><LuCalendarClock /></span>
-                  <div className="grow"><div className="strong">Licences proches de l’expiration</div><div className="muted-s">Proposez le renouvellement dès maintenant.</div></div>
+                  <div className="grow"><div className="strong">{t('sa.w.proches')}</div><div className="muted-s">{t('sa.w.prochesSous')}</div></div>
                   <span className="watch-n"><CountUp value={tt.expiring_licenses ?? 0} /></span>
                 </li>
                 <li className={cls((tt.expired_licenses ?? 0) > 0 && 'bad')}>
                   <span className="state-icon bad"><LuTriangleAlert /></span>
-                  <div className="grow"><div className="strong">Licences expirées</div><div className="muted-s">Ces boutiques ne peuvent plus vendre.</div></div>
+                  <div className="grow"><div className="strong">{t('sa.w.expirees')}</div><div className="muted-s">{t('sa.w.expireesSous')}</div></div>
                   <span className="watch-n"><CountUp value={tt.expired_licenses ?? 0} /></span>
                 </li>
                 <li>
                   <span className="state-icon trial"><LuHourglass /></span>
-                  <div className="grow"><div className="strong">Essais en cours</div><div className="muted-s">À convertir en abonnement payant.</div></div>
+                  <div className="grow"><div className="strong">{t('sa.w.essais')}</div><div className="muted-s">{t('sa.w.essaisSous')}</div></div>
                   <span className="watch-n"><CountUp value={tt.trial_subscriptions ?? 0} /></span>
                 </li>
               </ul>
 
               <div className="cash-sum">
                 <div className="cash-sum-top">
-                  <div><span className="stat-l">Encaissé à ce jour</span><div className="cash-sum-v"><CountUp value={pt.paid_amount ?? 0} format={fcfa} /></div></div>
-                  <Link to="/paiements" className="link">Paiements <LuArrowRight className="link-arrow" /></Link>
+                  <div><span className="stat-l">{t('sa.encaisseJour')}</span><div className="cash-sum-v"><CountUp value={pt.paid_amount ?? 0} format={fcfa} /></div></div>
+                  <Link to="/paiements" className="link">{t('sa.paiements')} <LuArrowRight className="link-arrow" /></Link>
                 </div>
                 <div className="split-bar" aria-hidden="true">
                   <span className="ok" style={{ width: `${pct(pt.paid)}%` }} />
@@ -478,9 +475,9 @@ export default function SuperAdminDashboard() {
                   <span className="bad" style={{ width: `${pct(pt.rejected)}%` }} />
                 </div>
                 <ul className="split-legend">
-                  <li><i className="ok" />{pt.paid ?? 0} payés</li>
-                  <li><i className="warn" />{(pt.unpaid ?? 0) + (pt.pending ?? 0)} en attente</li>
-                  <li><i className="bad" />{pt.rejected ?? 0} rejetés</li>
+                  <li><i className="ok" />{t('sa.leg.payes', { n: String(pt.paid ?? 0) })}</li>
+                  <li><i className="warn" />{t('sa.leg.attente', { n: String((pt.unpaid ?? 0) + (pt.pending ?? 0)) })}</li>
+                  <li><i className="bad" />{t('sa.leg.rejetes', { n: String(pt.rejected ?? 0) })}</li>
                 </ul>
               </div>
             </section>
@@ -488,11 +485,11 @@ export default function SuperAdminDashboard() {
 
           <section className="panel">
             <div className="panel-head">
-              <div><h2>Derniers paiements reçus</h2><p className="panel-sub">Les règlements les plus récents, toutes entreprises confondues.</p></div>
-              <Link to="/paiements" className="link">Tout l’historique <LuArrowRight className="link-arrow" /></Link>
+              <div><h2>{t('sa.derniersPaiements')}</h2><p className="panel-sub">{t('sa.derniersPaiementsSous')}</p></div>
+              <Link to="/paiements" className="link">{t('sa.historique')} <LuArrowRight className="link-arrow" /></Link>
             </div>
             {transactions.length === 0
-              ? <Empty title="Aucun paiement enregistré pour l’instant." />
+              ? <Empty title={t('sa.aucunPaiement')} />
               : paymentsTable(transactions.slice(0, 5), true)}
           </section>
         </>
@@ -500,27 +497,27 @@ export default function SuperAdminDashboard() {
 
       {view === 'tenants' && (
         <>
-          {pageHead(<button className="btn btn-primary" type="button" onClick={() => focusForm('form-tenant')}><LuPlus /> Inscrire une entreprise</button>)}
+          {pageHead(<button className="btn btn-primary" type="button" onClick={() => focusForm('form-tenant')}><LuPlus /> {t('sa.inscrire')}</button>)}
           {notice}
 
           <div className="stat-grid">
-            <Stat i={0} tone="brand" icon={<LuBuilding2 />} label="Entreprises clientes" value={tt.total_tenants ?? 0} hint={`${plural(tt.active_tenants ?? 0, 'active', 'actives')}`} />
-            <Stat i={1} tone="gold" icon={<LuHourglass />} label="En période d’essai" value={tt.trial_subscriptions ?? 0} hint="À convertir en abonnement" />
-            <Stat i={2} tone={(tt.expiring_licenses ?? 0) > 0 ? 'danger' : 'mute'} icon={<LuCalendarClock />} label="Licences à renouveler" value={tt.expiring_licenses ?? 0} hint={`${tt.expired_licenses ?? 0} déjà expirée(s)`} />
+            <Stat i={0} tone="brand" icon={<LuBuilding2 />} label={t('sa.stat.entreprises')} value={tt.total_tenants ?? 0} hint={pl(tt.active_tenants ?? 0, 'sa.actives')} />
+            <Stat i={1} tone="gold" icon={<LuHourglass />} label={t('sa.stat.essai')} value={tt.trial_subscriptions ?? 0} hint={t('sa.stat.essaiHint')} />
+            <Stat i={2} tone={(tt.expiring_licenses ?? 0) > 0 ? 'danger' : 'mute'} icon={<LuCalendarClock />} label={t('sa.stat.aRenouveler')} value={tt.expiring_licenses ?? 0} hint={t('sa.stat.dejaExpirees', { n: String(tt.expired_licenses ?? 0) })} />
           </div>
 
           <div className="sa-split">
             <section className="panel">
               <div className="panel-head">
-                <div><h2>Toutes les entreprises</h2><p className="panel-sub">Changez l’état d’un abonnement directement dans la liste.</p></div>
+                <div><h2>{t('sa.toutes')}</h2><p className="panel-sub">{t('sa.toutesSous')}</p></div>
                 <span className="badge info">{paymentTenants.length}</span>
               </div>
               {paymentTenants.length === 0 ? (
-                <Empty title="Aucune entreprise cliente pour l’instant. Inscrivez la première boutique de pagnes avec le formulaire." />
+                <Empty title={t('sa.aucuneEntrepriseForm')} />
               ) : (
                 <div className="table-wrap">
                   <table className="tbl">
-                    <thead><tr><th>Entreprise</th><th>Formule</th><th>Abonnement</th><th>Licence</th><th></th></tr></thead>
+                    <thead><tr><th>{t('sa.col.entreprise')}</th><th>{t('tp.col.formule')}</th><th>{t('sa.col.abonnement')}</th><th>{t('tp.licence')}</th><th></th></tr></thead>
                     <tbody>
                       {paymentTenants.map((tenant) => {
                         const lic = tenant.licenses?.find((x) => x.status === 'active') ?? tenant.licenses?.[0];
@@ -531,12 +528,12 @@ export default function SuperAdminDashboard() {
                                 <Avatar name={tenant.nom} />
                                 <div className="grow">
                                   <div className="strong">{tenant.nom}</div>
-                                  <div className="muted-s">{tenant.slug && <span className="mono">{tenant.slug}</span>}{tenant.slug && ' · '}{plural(tenant.boutiques?.length ?? 0, 'boutique', 'boutiques')}</div>
+                                  <div className="muted-s">{tenant.slug && <span className="mono">{tenant.slug}</span>}{tenant.slug && ' · '}{pl(tenant.boutiques?.length ?? 0, 'sa.boutiques')}</div>
                                 </div>
                               </div>
                             </td>
                             <td>
-                              <div>{tenant.subscription?.plan?.nom ?? <span className="muted-s">Sans formule</span>}</div>
+                              <div>{tenant.subscription?.plan?.nom ?? <span className="muted-s">{t('sa.sansFormule')}</span>}</div>
                               {tenant.subscription?.plan?.prix != null && <div className="muted-s tnum">{fcfa(tenant.subscription.plan.prix)}</div>}
                             </td>
                             <td>
@@ -546,21 +543,21 @@ export default function SuperAdminDashboard() {
                                   className="select sm"
                                   value={tenant.subscription?.status ?? 'active'}
                                   onChange={(e) => void handleStatusChange(tenant.id, e.target.value as 'active' | 'trial' | 'expired' | 'cancelled')}
-                                  aria-label={`Changer l’état de l’abonnement de ${tenant.nom}`}
+                                  aria-label={t('sa.changerEtat', { nom: tenant.nom })}
                                 >
-                                  <option value="active">Actif</option>
-                                  <option value="trial">Essai</option>
-                                  <option value="expired">Expiré</option>
-                                  <option value="cancelled">Annulé</option>
+                                  <option value="active">{t('billing.status.active')}</option>
+                                  <option value="trial">{t('billing.status.trial')}</option>
+                                  <option value="expired">{t('billing.status.expired')}</option>
+                                  <option value="cancelled">{t('billing.status.cancelled')}</option>
                                 </select>
                               </div>
                             </td>
                             <td>
                               <StatusBadge status={lic?.status} />
-                              {lic?.expires_at && <div className="muted-s nowrap">jusqu’au {fmtDate(lic.expires_at)}</div>}
+                              {lic?.expires_at && <div className="muted-s nowrap">{t('sa.jusqua', { d: fmtDate(lic.expires_at) })}</div>}
                             </td>
                             <td className="r">
-                              <button className="btn btn-sm" type="button" onClick={() => renouvelerDepuisListe(tenant.id)} title={`Encaisser le renouvellement de ${tenant.nom}`}><LuWallet /> Renouveler</button>
+                              <button className="btn btn-sm" type="button" onClick={() => renouvelerDepuisListe(tenant.id)} title={t('sa.encaisserPour', { nom: tenant.nom })}><LuWallet /> {t('sa.renouveler')}</button>
                             </td>
                           </tr>
                         );
@@ -573,48 +570,48 @@ export default function SuperAdminDashboard() {
 
             <section className="panel sa-aside" id="form-tenant">
               <div className="panel-head">
-                <div><h2>Inscrire une entreprise</h2><p className="panel-sub">Le compte, sa première boutique et, si vous le souhaitez, sa formule.</p></div>
+                <div><h2>{t('sa.inscrire')}</h2><p className="panel-sub">{t('sa.inscrireSous')}</p></div>
               </div>
               <form className="form-col" onSubmit={handleCreateTenant}>
                 <fieldset className="step">
-                  <legend><span className="step-n">1</span> Entreprise</legend>
-                  <div className="field"><label className="field-label" htmlFor="tn-nom">Raison sociale</label><input id="tn-nom" className="input" value={tenantForm.nom} onChange={(e) => setTenantForm({ ...tenantForm, nom: e.target.value })} placeholder="Ex. Ets Akofa Wax" required /></div>
-                  <div className="field"><label className="field-label" htmlFor="tn-slug">Identifiant court</label><input id="tn-slug" className="input mono" value={tenantForm.slug} onChange={(e) => setTenantForm({ ...tenantForm, slug: e.target.value })} placeholder="akofa-wax" required /><span className="hint">Sans espace ni accent : il identifie l’entreprise sur la plateforme.</span></div>
+                  <legend><span className="step-n">1</span> {t('sa.col.entreprise')}</legend>
+                  <div className="field"><label className="field-label" htmlFor="tn-nom">{t('sa.f.raisonSociale')}</label><input id="tn-nom" className="input" value={tenantForm.nom} onChange={(e) => setTenantForm({ ...tenantForm, nom: e.target.value })} placeholder={t('sa.f.raisonSocialeEx')} required /></div>
+                  <div className="field"><label className="field-label" htmlFor="tn-slug">{t('sa.f.slug')}</label><input id="tn-slug" className="input mono" value={tenantForm.slug} onChange={(e) => setTenantForm({ ...tenantForm, slug: e.target.value })} placeholder="akofa-wax" required /><span className="hint">{t('sa.f.slugHint')}</span></div>
                 </fieldset>
                 <fieldset className="step">
-                  <legend><span className="step-n">2</span> Première boutique</legend>
+                  <legend><span className="step-n">2</span> {t('sa.f.premiereBoutique')}</legend>
                   <div className="row-2">
-                    <div className="field"><label className="field-label" htmlFor="tn-bq">Nom de la boutique</label><input id="tn-bq" className="input" value={tenantForm.boutiqueNom} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueNom: e.target.value })} placeholder="Ex. Grand Marché" required /></div>
-                    <div className="field"><label className="field-label" htmlFor="tn-tel">Téléphone</label><input id="tn-tel" className="input" inputMode="tel" value={tenantForm.boutiqueTelephone} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueTelephone: e.target.value })} placeholder="+228 90 00 00 00" /></div>
+                    <div className="field"><label className="field-label" htmlFor="tn-bq">{t('sa.f.nomBoutique')}</label><input id="tn-bq" className="input" value={tenantForm.boutiqueNom} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueNom: e.target.value })} placeholder={t('sa.f.nomBoutiqueEx')} required /></div>
+                    <div className="field"><label className="field-label" htmlFor="tn-tel">{t('clients.telephone')}</label><input id="tn-tel" className="input" inputMode="tel" value={tenantForm.boutiqueTelephone} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueTelephone: e.target.value })} placeholder="+228 90 00 00 00" /></div>
                   </div>
-                  <div className="field"><label className="field-label" htmlFor="tn-adr">Adresse</label><input id="tn-adr" className="input" value={tenantForm.boutiqueAdresse} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueAdresse: e.target.value })} placeholder="Quartier, ville" /></div>
+                  <div className="field"><label className="field-label" htmlFor="tn-adr">{t('clients.adresse')}</label><input id="tn-adr" className="input" value={tenantForm.boutiqueAdresse} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueAdresse: e.target.value })} placeholder={t('sa.f.adresseEx')} /></div>
                 </fieldset>
                 <fieldset className="step">
-                  <legend><span className="step-n">3</span> Abonnement initial</legend>
+                  <legend><span className="step-n">3</span> {t('sa.f.abonnementInitial')}</legend>
                   <div className="field">
-                    <label className="field-label" htmlFor="tn-plan">Formule</label>
+                    <label className="field-label" htmlFor="tn-plan">{t('tp.col.formule')}</label>
                     <select id="tn-plan" className="select" value={tenantForm.planId} onChange={(e) => setTenantForm({ ...tenantForm, planId: e.target.value })}>
-                      <option value="">Aucune formule pour l’instant</option>
+                      <option value="">{t('sa.f.aucuneFormule')}</option>
                       {data.plans.map((plan) => <option key={plan.id} value={String(plan.id)}>{plan.nom}{plan.prix != null ? ` · ${fcfa(plan.prix)}` : ''}</option>)}
                     </select>
                   </div>
                   <div className="row-2">
                     <div className="field">
-                      <label className="field-label" htmlFor="tn-pm">Moyen de paiement</label>
+                      <label className="field-label" htmlFor="tn-pm">{t('sa.f.moyen')}</label>
                       <select id="tn-pm" className="select" value={tenantForm.paymentMethod} onChange={(e) => setTenantForm({ ...tenantForm, paymentMethod: e.target.value })}>
-                        <option value="cash">Espèces</option>
-                        <option value="flooz">Flooz</option>
-                        <option value="tmoney">TMoney</option>
-                        <option value="card">Carte bancaire</option>
+                        <option value="cash">{t('billing.method.cash')}</option>
+                        <option value="flooz">{t('billing.method.flooz')}</option>
+                        <option value="tmoney">{t('billing.method.tmoney')}</option>
+                        <option value="card">{t('sa.mode.card')}</option>
                       </select>
                     </div>
                     <div className="field">
-                      <label className="field-label" htmlFor="tn-ref">Référence de transaction</label>
+                      <label className="field-label" htmlFor="tn-ref">{t('sa.f.referenceTransaction')}</label>
                       <input id="tn-ref" className="input mono" value={tenantForm.paymentReference} onChange={(e) => setTenantForm({ ...tenantForm, paymentReference: e.target.value })} placeholder="Ex. FLOOZ-12345" />
                     </div>
                   </div>
                 </fieldset>
-                <button className="btn btn-primary btn-block" type="submit"><LuPlus /> Inscrire l’entreprise</button>
+                <button className="btn btn-primary btn-block" type="submit"><LuPlus /> {t('sa.f.inscrireBouton')}</button>
               </form>
             </section>
           </div>
@@ -624,76 +621,76 @@ export default function SuperAdminDashboard() {
       {view === 'payments' && (
         <>
           {pageHead(<>
-            <button className="btn" type="button" onClick={() => void downloadBlob('/super-admin/payments/export.csv', `paiements-${new Date().toISOString().slice(0, 10)}.csv`)}><LuDownload /> Exporter en CSV</button>
-            <button className="btn btn-primary" type="button" onClick={() => focusForm('form-payment')}><LuPlus /> Encaisser un renouvellement</button>
+            <button className="btn" type="button" onClick={() => void downloadBlob('/super-admin/payments/export.csv', `paiements-${new Date().toISOString().slice(0, 10)}.csv`)}><LuDownload /> {t('sa.exporter')}</button>
+            <button className="btn btn-primary" type="button" onClick={() => focusForm('form-payment')}><LuPlus /> {t('sa.encaisser')}</button>
           </>)}
           {notice}
 
           <div className="stat-grid">
-            <Stat i={0} tone="terra" icon={<LuWallet />} label="Montant encaissé" value={pt.paid_amount ?? 0} format={fcfa} hint="Total des paiements validés" />
-            <Stat i={1} tone="green" icon={<LuCircleCheck />} label="Paiements reçus" value={pt.paid ?? 0} />
-            <Stat i={2} tone="gold" icon={<LuHourglass />} label="En attente ou impayés" value={(pt.unpaid ?? 0) + (pt.pending ?? 0)} hint="À relancer" />
-            <Stat i={3} tone={(pt.rejected ?? 0) > 0 ? 'danger' : 'mute'} icon={<LuTriangleAlert />} label="Rejetés" value={pt.rejected ?? 0} />
+            <Stat i={0} tone="terra" icon={<LuWallet />} label={t('sa.stat.encaisse')} value={pt.paid_amount ?? 0} format={fcfa} hint={t('sa.stat.encaisseHint')} />
+            <Stat i={1} tone="green" icon={<LuCircleCheck />} label={t('sa.stat.recus')} value={pt.paid ?? 0} />
+            <Stat i={2} tone="gold" icon={<LuHourglass />} label={t('sa.stat.attente')} value={(pt.unpaid ?? 0) + (pt.pending ?? 0)} hint={t('sa.stat.attenteHint')} />
+            <Stat i={3} tone={(pt.rejected ?? 0) > 0 ? 'danger' : 'mute'} icon={<LuTriangleAlert />} label={t('sa.stat.rejetes')} value={pt.rejected ?? 0} />
           </div>
 
           <div className="sa-split">
             <section className="panel">
               <div className="panel-head">
-                <div><h2>Historique des paiements</h2><p className="panel-sub">Chaque paiement génère une facture téléchargeable.</p></div>
+                <div><h2>{t('sa.histoPaiements')}</h2><p className="panel-sub">{t('sa.histoPaiementsSous')}</p></div>
                 <span className="badge info">{transactions.length}</span>
               </div>
-              {transactions.length === 0 ? <Empty title="Aucun paiement enregistré pour l’instant." /> : paymentsTable(transactions)}
+              {transactions.length === 0 ? <Empty title={t('sa.aucunPaiement')} /> : paymentsTable(transactions)}
             </section>
 
             <section className="panel sa-aside" id="form-payment">
               <div className="panel-head">
                 <div>
-                  <h2>{paymentForm.prolonger ? 'Encaisser un renouvellement' : 'Enregistrer un paiement'}</h2>
-                  <p className="panel-sub">{paymentForm.prolonger ? 'Le paiement reçu prolonge l’abonnement et la licence ; la facture est générée.' : 'Le paiement est consigné sans toucher à la licence.'}</p>
+                  <h2>{paymentForm.prolonger ? t('sa.encaisser') : t('sa.p.enregistrer')}</h2>
+                  <p className="panel-sub">{paymentForm.prolonger ? t('sa.p.sousRenouveler') : t('sa.p.sousEnregistrer')}</p>
                 </div>
               </div>
               <form className="form-col" onSubmit={handleCreatePayment}>
-                <div className="field"><label className="field-label" htmlFor="py-tenant">Entreprise</label><select id="py-tenant" className="select" value={paymentForm.tenantId} onChange={(event) => choisirTenant(event.target.value)} required><option value="">Choisir une entreprise</option>{paymentTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.nom}</option>)}</select></div>
+                <div className="field"><label className="field-label" htmlFor="py-tenant">{t('sa.col.entreprise')}</label><select id="py-tenant" className="select" value={paymentForm.tenantId} onChange={(event) => choisirTenant(event.target.value)} required><option value="">{t('sa.p.choisirEntreprise')}</option>{paymentTenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.nom}</option>)}</select></div>
                 {tenantChoisi && (
                   <p className="muted-s">
-                    Licence actuelle : <StatusBadge status={licenceChoisie?.status} /> {licenceChoisie?.expires_at ? `jusqu’au ${fmtDate(licenceChoisie.expires_at)}` : ''}
+                    {t('sa.p.licenceActuelle')} <StatusBadge status={licenceChoisie?.status} /> {licenceChoisie?.expires_at ? t('sa.jusqua', { d: fmtDate(licenceChoisie.expires_at) }) : ''}
                   </p>
                 )}
 
-                <label className="check"><input type="checkbox" checked={paymentForm.prolonger} onChange={(e) => setPaymentForm({ ...paymentForm, prolonger: e.target.checked })} /> Prolonger la licence avec ce paiement</label>
+                <label className="check"><input type="checkbox" checked={paymentForm.prolonger} onChange={(e) => setPaymentForm({ ...paymentForm, prolonger: e.target.checked })} /> {t('sa.p.prolonger')}</label>
 
                 {paymentForm.prolonger ? (
                   <div className="row-2">
-                    <div className="field"><label className="field-label" htmlFor="py-plan">Formule</label>
+                    <div className="field"><label className="field-label" htmlFor="py-plan">{t('tp.col.formule')}</label>
                       <select id="py-plan" className="select" value={paymentForm.planId} onChange={(e) => setPaymentForm({ ...paymentForm, planId: e.target.value })} required>
-                        <option value="">Choisir une formule</option>
-                        {data.plans.map((plan) => <option key={plan.id} value={String(plan.id)}>{plan.nom} · {fcfa(plan.prix ?? 0)} / {plan.intervalle === 'year' ? 'an' : 'mois'}</option>)}
+                        <option value="">{t('sa.p.choisirFormule')}</option>
+                        {data.plans.map((plan) => <option key={plan.id} value={String(plan.id)}>{plan.nom} · {fcfa(plan.prix ?? 0)} / {plan.intervalle === 'year' ? t('sa.an') : t('sa.mois')}</option>)}
                       </select>
                     </div>
-                    <div className="field"><label className="field-label" htmlFor="py-per">Durée ({planChoisi?.intervalle === 'year' ? 'années' : 'mois'})</label>
+                    <div className="field"><label className="field-label" htmlFor="py-per">{planChoisi?.intervalle === 'year' ? t('sa.p.dureeAnnees') : t('sa.p.dureeMois')}</label>
                       <input id="py-per" className="input num" type="number" inputMode="numeric" min={1} max={36} step={1} value={paymentForm.periodes} onChange={(e) => setPaymentForm({ ...paymentForm, periodes: e.target.value })} required />
                     </div>
                   </div>
                 ) : (
-                  <div className="field"><label className="field-label" htmlFor="py-status">Statut</label><select id="py-status" className="select" value={paymentForm.status} onChange={(event) => setPaymentForm({ ...paymentForm, status: event.target.value })}><option value="pending">En attente de vérification</option><option value="unpaid">Non payé</option><option value="rejected">Rejeté</option><option value="paid">Payé</option></select></div>
+                  <div className="field"><label className="field-label" htmlFor="py-status">{t('tp.col.statut')}</label><select id="py-status" className="select" value={paymentForm.status} onChange={(event) => setPaymentForm({ ...paymentForm, status: event.target.value })}><option value="pending">{t('sa.p.enVerification')}</option><option value="unpaid">{t('billing.status.unpaid')}</option><option value="rejected">{t('billing.status.rejected')}</option><option value="paid">{t('billing.status.paid')}</option></select></div>
                 )}
 
                 <div className="row-2">
-                  <div className="field"><label className="field-label" htmlFor="py-amount">Montant reçu (FCFA)</label>
+                  <div className="field"><label className="field-label" htmlFor="py-amount">{t('sa.p.montantRecu')}</label>
                     <input id="py-amount" className="input num" type="number" inputMode="numeric" min="0" step="1" value={montant} onChange={(event) => setPaymentForm({ ...paymentForm, amount: event.target.value, amountAuto: false })} required />
-                    {paymentForm.prolonger && !paymentForm.amountAuto && <button type="button" className="link" onClick={() => setPaymentForm({ ...paymentForm, amountAuto: true })}>Revenir au tarif de la formule</button>}
+                    {paymentForm.prolonger && !paymentForm.amountAuto && <button type="button" className="link" onClick={() => setPaymentForm({ ...paymentForm, amountAuto: true })}>{t('sa.p.tarifFormule')}</button>}
                   </div>
-                  <div className="field"><label className="field-label" htmlFor="py-method">Mode de paiement</label><select id="py-method" className="select" value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>{MODES.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}</select></div>
+                  <div className="field"><label className="field-label" htmlFor="py-method">{t('sa.p.mode')}</label><select id="py-method" className="select" value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>{MODES.map(m => <option key={m.v} value={m.v}>{t(m.label)}</option>)}</select></div>
                 </div>
-                <div className="field"><label className="field-label" htmlFor="py-ref">Référence</label>
-                  <input id="py-ref" className="input mono" value={paymentForm.reference} onChange={(event) => setPaymentForm({ ...paymentForm, reference: event.target.value })} placeholder={MODES.find(m => m.v === paymentForm.method)?.ref} required />
-                  <span className="hint">Obligatoire pour le contrôle : une même référence ne peut pas être enregistrée deux fois pour un même mode.</span>
+                <div className="field"><label className="field-label" htmlFor="py-ref">{t('sa.p.reference')}</label>
+                  <input id="py-ref" className="input mono" value={paymentForm.reference} onChange={(event) => setPaymentForm({ ...paymentForm, reference: event.target.value })} placeholder={t(MODES.find(m => m.v === paymentForm.method)?.ref ?? 'sa.ref.cash')} required />
+                  <span className="hint">{t('sa.p.referenceHint')}</span>
                 </div>
-                <div className="field"><label className="field-label" htmlFor="py-file">Justificatif (PDF, JPG, PNG)</label><input id="py-file" className="input" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setPaymentAttachment(event.target.files?.[0] ?? null)} /></div>
-                <div className="field"><label className="field-label" htmlFor="py-note">Note interne</label><input id="py-note" className="input" value={paymentForm.notes} onChange={(event) => setPaymentForm({ ...paymentForm, notes: event.target.value })} /></div>
+                <div className="field"><label className="field-label" htmlFor="py-file">{t('sa.p.justificatif')}</label><input id="py-file" className="input" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setPaymentAttachment(event.target.files?.[0] ?? null)} /></div>
+                <div className="field"><label className="field-label" htmlFor="py-note">{t('sa.p.note')}</label><input id="py-note" className="input" value={paymentForm.notes} onChange={(event) => setPaymentForm({ ...paymentForm, notes: event.target.value })} /></div>
 
-                {nouvelleFin && <p className="notice ok"><LuCalendarClock /> Licence prolongée jusqu’au <strong>{fmtDate(nouvelleFin.toISOString())}</strong>.</p>}
-                <button className="btn btn-primary btn-block" type="submit"><LuReceipt /> {paymentForm.prolonger ? 'Encaisser et renouveler' : 'Enregistrer et générer la facture'}</button>
+                {nouvelleFin && <p className="notice ok"><LuCalendarClock /> {t('sa.p.prolongeeJusqua')} <strong>{fmtDate(nouvelleFin.toISOString())}</strong>.</p>}
+                <button className="btn btn-primary btn-block" type="submit"><LuReceipt /> {paymentForm.prolonger ? t('sa.p.boutonRenouveler') : t('sa.p.boutonEnregistrer')}</button>
               </form>
             </section>
           </div>
@@ -702,31 +699,31 @@ export default function SuperAdminDashboard() {
 
       {view === 'plans' && (
         <>
-          {pageHead(<button className="btn btn-primary" type="button" onClick={() => focusForm('form-plan')}><LuPlus /> Nouvelle formule</button>)}
+          {pageHead(<button className="btn btn-primary" type="button" onClick={() => focusForm('form-plan')}><LuPlus /> {t('sa.pl.nouvelle')}</button>)}
           {notice}
 
           <div className="stat-grid">
-            <Stat i={0} tone="brand" icon={<LuLayers />} label="Formules au catalogue" value={data.plans.length} />
-            <Stat i={1} tone="green" icon={<LuBadgeCheck />} label="Proposées à la vente" value={data.plans.filter(p => p.actif).length} hint="Formules actives" />
-            <Stat i={2} tone="gold" icon={<LuUsers />} label="Entreprises abonnées" value={tt.active_subscriptions ?? 0} hint="Abonnements actifs" />
+            <Stat i={0} tone="brand" icon={<LuLayers />} label={t('sa.pl.catalogueStat')} value={data.plans.length} />
+            <Stat i={1} tone="green" icon={<LuBadgeCheck />} label={t('sa.pl.enVenteStat')} value={data.plans.filter(p => p.actif).length} hint={t('sa.pl.actives')} />
+            <Stat i={2} tone="gold" icon={<LuUsers />} label={t('sa.pl.abonnees')} value={tt.active_subscriptions ?? 0} hint={t('sa.stat.abonnements')} />
           </div>
 
           <div className="sa-split">
             <section className="panel">
               <div className="panel-head">
-                <div><h2>Catalogue des formules</h2><p className="panel-sub">Ce que chaque offre comprend, telle que vos clients la voient.</p></div>
+                <div><h2>{t('sa.pl.catalogue')}</h2><p className="panel-sub">{t('sa.pl.catalogueSous')}</p></div>
               </div>
               {data.plans.length === 0 ? (
-                <Empty title="Aucune formule pour l’instant. Créez votre première offre avec le formulaire." />
+                <Empty title={t('sa.pl.aucune')} />
               ) : (
                 <div className="plan-grid">
                   {data.plans.map((plan, i) => (
                     <article key={plan.id} className={cls('plan-card', !plan.actif && 'off')} style={{ ['--i' as string]: i } as React.CSSProperties}>
-                      <div className="plan-top"><h3>{plan.nom}</h3><span className={cls('badge', plan.actif ? 'ok' : 'mute')}>{plan.actif ? 'En vente' : 'Retirée'}</span></div>
-                      <div className="plan-price">{fcfa(plan.prix ?? 0)}{plan.intervalle && <small> / {plan.intervalle === 'year' ? 'an' : 'mois'}</small>}</div>
+                      <div className="plan-top"><h3>{plan.nom}</h3><span className={cls('badge', plan.actif ? 'ok' : 'mute')}>{plan.actif ? t('sa.pl.enVente') : t('sa.pl.retiree')}</span></div>
+                      <div className="plan-price">{fcfa(plan.prix ?? 0)}{plan.intervalle && <small> / {plan.intervalle === 'year' ? t('sa.an') : t('sa.mois')}</small>}</div>
                       <ul className="plan-feats">
-                        <li><LuStore /> {plural(plan.max_boutiques ?? 0, 'boutique', 'boutiques')}</li>
-                        <li><LuUsers /> {plural(plan.max_utilisateurs ?? 0, 'utilisateur', 'utilisateurs')}</li>
+                        <li><LuStore /> {pl(plan.max_boutiques ?? 0, 'sa.boutiques')}</li>
+                        <li><LuUsers /> {pl(plan.max_utilisateurs ?? 0, 'sa.utilisateurs')}</li>
                       </ul>
                     </article>
                   ))}
@@ -736,35 +733,35 @@ export default function SuperAdminDashboard() {
 
             <section className="panel sa-aside" id="form-plan">
               <div className="panel-head">
-                <div><h2>Créer une formule</h2><p className="panel-sub">Elle sera proposée aux entreprises dès son activation.</p></div>
+                <div><h2>{t('sa.pl.creer')}</h2><p className="panel-sub">{t('sa.pl.creerSous')}</p></div>
               </div>
               <form className="form-col" onSubmit={handleCreatePlan}>
                 <div className="row-2">
-                  <div className="field"><label className="field-label" htmlFor="pl-nom">Nom de la formule</label><input id="pl-nom" className="input" value={planForm.nom} onChange={(e) => setPlanForm({ ...planForm, nom: e.target.value })} placeholder="Ex. Boutique Pro" required /></div>
-                  <div className="field"><label className="field-label" htmlFor="pl-slug">Identifiant court</label><input id="pl-slug" className="input mono" value={planForm.slug} onChange={(e) => setPlanForm({ ...planForm, slug: e.target.value })} placeholder="boutique-pro" required /></div>
+                  <div className="field"><label className="field-label" htmlFor="pl-nom">{t('sa.pl.nom')}</label><input id="pl-nom" className="input" value={planForm.nom} onChange={(e) => setPlanForm({ ...planForm, nom: e.target.value })} placeholder={t('sa.pl.nomEx')} required /></div>
+                  <div className="field"><label className="field-label" htmlFor="pl-slug">{t('sa.f.slug')}</label><input id="pl-slug" className="input mono" value={planForm.slug} onChange={(e) => setPlanForm({ ...planForm, slug: e.target.value })} placeholder="boutique-pro" required /></div>
                 </div>
                 <div className="row-2">
-                  <div className="field"><label className="field-label" htmlFor="pl-prix">Prix (FCFA)</label><input id="pl-prix" className="input num" type="number" inputMode="numeric" min={0} value={planForm.prix} onChange={(e) => setPlanForm({ ...planForm, prix: e.target.value })} required /></div>
-                  <div className="field"><label className="field-label" htmlFor="pl-int">Facturation</label>
+                  <div className="field"><label className="field-label" htmlFor="pl-prix">{t('sa.pl.prix')}</label><input id="pl-prix" className="input num" type="number" inputMode="numeric" min={0} value={planForm.prix} onChange={(e) => setPlanForm({ ...planForm, prix: e.target.value })} required /></div>
+                  <div className="field"><label className="field-label" htmlFor="pl-int">{t('sa.pl.facturation')}</label>
                     <select id="pl-int" className="select" value={planForm.intervalle} onChange={(e) => setPlanForm({ ...planForm, intervalle: e.target.value })}>
-                      <option value="month">Mensuelle</option>
-                      <option value="year">Annuelle</option>
+                      <option value="month">{t('sa.pl.mensuelle')}</option>
+                      <option value="year">{t('sa.pl.annuelle')}</option>
                     </select>
                   </div>
                 </div>
                 <div className="row-2">
-                  <div className="field"><label className="field-label" htmlFor="pl-bq">Boutiques incluses</label><input id="pl-bq" className="input num" type="number" min={1} value={planForm.max_boutiques} onChange={(e) => setPlanForm({ ...planForm, max_boutiques: e.target.value })} /></div>
-                  <div className="field"><label className="field-label" htmlFor="pl-us">Utilisateurs inclus</label><input id="pl-us" className="input num" type="number" min={1} value={planForm.max_utilisateurs} onChange={(e) => setPlanForm({ ...planForm, max_utilisateurs: e.target.value })} /></div>
+                  <div className="field"><label className="field-label" htmlFor="pl-bq">{t('sa.pl.boutiques')}</label><input id="pl-bq" className="input num" type="number" min={1} value={planForm.max_boutiques} onChange={(e) => setPlanForm({ ...planForm, max_boutiques: e.target.value })} /></div>
+                  <div className="field"><label className="field-label" htmlFor="pl-us">{t('sa.pl.utilisateurs')}</label><input id="pl-us" className="input num" type="number" min={1} value={planForm.max_utilisateurs} onChange={(e) => setPlanForm({ ...planForm, max_utilisateurs: e.target.value })} /></div>
                 </div>
-                <div className="field"><label className="field-label" htmlFor="pl-feat">Modules ouverts</label><input id="pl-feat" className="input mono" value={planForm.features} onChange={(e) => setPlanForm({ ...planForm, features: e.target.value })} placeholder="stock,ventes,users" /><span className="hint">Séparés par des virgules.</span></div>
-                <label className="check"><input type="checkbox" checked={planForm.actif} onChange={(e) => setPlanForm({ ...planForm, actif: e.target.checked })} /> Proposer cette formule à la vente</label>
-                <button className="btn btn-primary btn-block" type="submit"><LuPlus /> Enregistrer la formule</button>
+                <div className="field"><label className="field-label" htmlFor="pl-feat">{t('sa.pl.modules')}</label><input id="pl-feat" className="input mono" value={planForm.features} onChange={(e) => setPlanForm({ ...planForm, features: e.target.value })} placeholder="stock,ventes,users" /><span className="hint">{t('sa.pl.modulesHint')}</span></div>
+                <label className="check"><input type="checkbox" checked={planForm.actif} onChange={(e) => setPlanForm({ ...planForm, actif: e.target.checked })} /> {t('sa.pl.proposer')}</label>
+                <button className="btn btn-primary btn-block" type="submit"><LuPlus /> {t('sa.pl.enregistrer')}</button>
               </form>
             </section>
           </div>
         </>
       )}
-      {user && <p className="sa-foot muted-s">Connecté en tant que {user.nom} · {t('role.' + user.role)}</p>}
+      {user && <p className="sa-foot muted-s">{t('sa.connecte', { nom: user.nom, role: t('role.' + user.role) })}</p>}
     </div>
   );
 }

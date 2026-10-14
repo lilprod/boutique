@@ -1,6 +1,10 @@
+import { langue } from '../i18n';
 const nf0 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const NB = '\u00a0';
+/** Dates dans la langue de l'interface ; les montants gardent la convention r\u00e9gionale (espaces entre milliers, FCFA). */
+const LOCALE_DATES: Record<string, string> = { fr: 'fr-FR', en: 'en-GB' };
+const localeDates = () => LOCALE_DATES[langue()] ?? 'fr-FR';
 
 export const fcfa = (n: number) => nf0.format(Math.round(n)).replace(/[\u202f\u00a0]/g, NB) + NB + 'FCFA';
 export const num = (n: number) => nf2.format(n).replace(/[\u202f\u00a0]/g, NB);
@@ -12,12 +16,12 @@ export const dayKey = (d: Date | string) => {
   const x = typeof d === 'string' ? new Date(d) : d;
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 };
-export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(localeDates(), { day: '2-digit', month: 'short', year: 'numeric' });
 export const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  new Date(iso).toLocaleString(localeDates(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 export const fmtDayShort = (key: string) => {
   const [y, m, d] = key.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  return new Date(y, m - 1, d).toLocaleDateString(localeDates(), { day: '2-digit', month: 'short' });
 };
 
 export const uid = (p: string) => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);

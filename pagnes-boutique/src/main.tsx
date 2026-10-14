@@ -2,7 +2,9 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles.css';
+import { appliquerPreferences } from './lib/preferences';
 
+appliquerPreferences();
 createRoot(document.getElementById('root')!).render(<App />);
 
 // PWA : le service worker met l'application en cache pour un usage hors ligne (sans effet si sw.js est absent).

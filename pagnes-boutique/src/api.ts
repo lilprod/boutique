@@ -2,6 +2,8 @@
  * Client HTTP de l'API Laravel (pagnes-api) : jeton Bearer, erreurs normalisées, chargement paginé.
  * Configurer l'adresse avec VITE_API_URL (voir .env.example) ; par défaut, l'API locale.
  */
+import { langue, t } from './i18n';
+
 const BASE = ((import.meta.env?.VITE_API_URL as string | undefined) || 'http://127.0.0.1:8000/api').replace(/\/+$/, '');
 const TOKEN_KEY = 'pagnes.token';
 
@@ -23,14 +25,15 @@ function messageOf(status: number, body: any): string {
   const first = body?.errors && Object.values<string[]>(body.errors)[0]?.[0];
   if (status === 422 && first) return first;
   if (body?.message && typeof body.message === 'string') return body.message;
-  if (status === 403) return "Cette action est réservée à l'administrateur.";
-  if (status === 429) return 'Trop de tentatives. Réessayez dans une minute.';
-  if (status >= 500) return 'Erreur du serveur. Réessayez.';
-  return `Erreur ${status}.`;
+  if (status === 403) return t('api.reserveAdmin');
+  if (status === 429) return t('api.tropTentatives');
+  if (status >= 500) return t('api.erreurServeur');
+  return t('api.erreur', { status: String(status) });
 }
 
 export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  // X-Langue : l'API répond dans la langue choisie dans l'application (messages d'erreur, notifications).
+  const headers: Record<string, string> = { Accept: 'application/json', 'X-Langue': langue() };
   const tk = token.get();
   if (tk) headers.Authorization = `Bearer ${tk}`;
   // FormData (envoi de fichier) : le navigateur fixe lui-même le Content-Type, avec la limite multipart.
@@ -41,7 +44,7 @@ export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   try {
     res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body) });
   } catch {
-    throw new ApiError('Serveur injoignable. Vérifiez la connexion.', 0);
+    throw new ApiError(t('api.injoignable'), 0);
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
@@ -58,7 +61,7 @@ export const put = <T = any>(path: string, body?: unknown) => request<T>('PUT', 
 export const del = <T = any>(path: string) => request<T>('DELETE', path);
 
 export async function getBlob(path: string): Promise<Blob> {
-  const headers: Record<string, string> = { Accept: '*/*' };
+  const headers: Record<string, string> = { Accept: '*/*', 'X-Langue': langue() };
   const tk = token.get();
   if (tk) headers.Authorization = `Bearer ${tk}`;
 
@@ -66,7 +69,7 @@ export async function getBlob(path: string): Promise<Blob> {
   try {
     res = await fetch(BASE + path, { headers });
   } catch {
-    throw new ApiError('Serveur injoignable. Vérifiez la connexion.', 0);
+    throw new ApiError(t('api.injoignable'), 0);
   }
 
   if (!res.ok) {

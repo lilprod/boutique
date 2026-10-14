@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { LuBuilding2, LuHandCoins, LuTag, LuChevronsLeft, LuChevronsRight, LuGauge, LuLayers, LuLayoutDashboard, LuLogOut, LuPackage, LuReceipt, LuSettings, LuShoppingCart, LuUsers, LuWallet } from 'react-icons/lu';
+import React, { useEffect, useRef, useState } from 'react';
+import { LuBuilding2, LuHandCoins, LuTag, LuChevronsLeft, LuChevronsRight, LuGauge, LuLayers, LuLayoutDashboard, LuPackage, LuReceipt, LuSettings, LuShoppingCart, LuUsers, LuWallet } from 'react-icons/lu';
 import { AppProvider, useApp } from './store';
 import { UIProvider } from './components/ui';
+import { TopBar } from './components/TopBar';
 import { Link, go, useRoute } from './router';
 import { t } from './i18n';
 import { cls } from './lib/format';
@@ -29,8 +30,9 @@ const NAV = [
 ];
 
 function Layout() {
-  const { user, logout, db, shopMode, returnToTenantPortal } = useApp();
+  const { user, db, shopMode, returnToTenantPortal } = useApp();
   const path = useRoute();
+  const mainRef = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 1100);
   const admin = user!.role === 'admin' || user!.role === 'boutique_admin' || (user!.role === 'tenant_admin' && shopMode);
   // « Propriétaires » n'apparaît que si la boutique a activé l'option.
@@ -38,6 +40,8 @@ function Layout() {
   const current = items.find(n => n.to === path) ?? (NAV.find(n => n.to === path) ? null : items[0]);
 
   useEffect(() => { if (!current) go('/'); }, [current]);
+  // L'entête reste monté d'une page à l'autre : on remet seulement le défilement en haut.
+  useEffect(() => { mainRef.current?.scrollTo({ top: 0 }); }, [current?.to]);
   useEffect(() => { document.title = `${t(current?.key ?? 'nav.dashboard')} · ${db.parametres.boutique}`; }, [current, db.parametres.boutique]);
 
   const page = () => {
@@ -63,70 +67,65 @@ function Layout() {
           ))}
         </nav>
         <div className="side-foot">
-          <div className="me"><span className="me-name">{user!.nom}</span><span className="me-role">{t('role.' + user!.role)}</span></div>
-          {user!.role === 'tenant_admin' && shopMode && <button className="nav-link" onClick={returnToTenantPortal} title="Retour au portail tenant" aria-label="Retour au portail tenant"><LuBuilding2 /><span>Portail tenant</span></button>}
-          <button className="nav-link" onClick={() => { void logout(); }} title={t('nav.deconnexion')} aria-label={t('nav.deconnexion')}><LuLogOut /><span>{t('nav.deconnexion')}</span></button>
+          {user!.role === 'tenant_admin' && shopMode && <button className="nav-link" onClick={returnToTenantPortal} title={t('app.retourPortail')} aria-label={t('app.retourPortail')}><LuBuilding2 /><span>{t('app.portail')}</span></button>}
           <button className="nav-link collapse-btn" onClick={() => setCollapsed(c => !c)} aria-label={collapsed ? t('nav.deplier') : t('nav.replier')}>{collapsed ? <LuChevronsRight /> : <LuChevronsLeft />}<span>{t('nav.replier')}</span></button>
         </div>
       </aside>
-      <main className="main" key={current?.to}>{page()}</main>
+      <main className="main" ref={mainRef}>
+        <TopBar notificationsPath="/notifications" espace={db.parametres.boutique} />
+        <div key={current?.to}>{page()}</div>
+      </main>
     </div>
   );
 }
 
 /** Espace de l'administrateur de la plateforme : les écrans sont choisis par SuperAdminDashboard selon la route. */
 const SAAS_NAV = [
-  { to: '/', label: 'Pilotage', title: 'Pilotage de la plateforme', icon: <LuGauge /> },
-  { to: '/tenants', label: 'Entreprises', title: 'Entreprises clientes', icon: <LuBuilding2 /> },
-  { to: '/paiements', label: 'Paiements', title: 'Paiements et factures', icon: <LuWallet /> },
-  { to: '/plans', label: 'Formules', title: 'Formules d’abonnement', icon: <LuLayers /> },
+  { to: '/', label: 'sa.nav.pilotage', title: 'sa.v.overview.title', icon: <LuGauge /> },
+  { to: '/tenants', label: 'sa.nav.entreprises', title: 'sa.v.tenants.title', icon: <LuBuilding2 /> },
+  { to: '/paiements', label: 'sa.nav.paiements', title: 'sa.v.payments.title', icon: <LuWallet /> },
+  { to: '/plans', label: 'sa.nav.formules', title: 'sa.v.plans.title', icon: <LuLayers /> },
 ];
 
 function SaaSAdminLayout() {
-  const { user, logout } = useApp();
   const path = useRoute();
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 1100);
   const active = SAAS_NAV.find(n => n.to === path) ?? SAAS_NAV[0];
-  useEffect(() => { document.title = `${active.title} · Console plateforme`; }, [active]);
+  useEffect(() => { document.title = `${t(active.title)} · ${t('sa.v.overview.eyebrow')}`; }, [active]);
 
   return (
     <div className={cls('shell', collapsed && 'collapsed')}>
       <aside className="side">
-        <div className="side-brand"><div className="brand-motif" aria-hidden="true" /><span className="brand-name">Console plateforme<small>Pagnes de Lomé · SaaS</small></span></div>
-        <nav aria-label="Navigation de la console">
+        <div className="side-brand"><div className="brand-motif" aria-hidden="true" /><span className="brand-name">{t('sa.v.overview.eyebrow')}<small>{t('app.marqueSaas')}</small></span></div>
+        <nav aria-label={t('app.navConsole')}>
           {SAAS_NAV.map((n) => (
-            <Link key={n.to} to={n.to} className={cls('nav-link', active.to === n.to && 'on')} title={n.title}>{n.icon}<span>{n.label}</span></Link>
+            <Link key={n.to} to={n.to} className={cls('nav-link', active.to === n.to && 'on')} title={t(n.title)}>{n.icon}<span>{t(n.label)}</span></Link>
           ))}
         </nav>
         <div className="side-foot">
-          <div className="me"><span className="me-name">{user!.nom}</span><span className="me-role">{t('role.' + user!.role)}</span></div>
-          <button className="nav-link" onClick={() => { void logout(); }} title={t('nav.deconnexion')} aria-label={t('nav.deconnexion')}><LuLogOut /><span>{t('nav.deconnexion')}</span></button>
           <button className="nav-link collapse-btn" onClick={() => setCollapsed(c => !c)} aria-label={collapsed ? t('nav.deplier') : t('nav.replier')}>{collapsed ? <LuChevronsRight /> : <LuChevronsLeft />}<span>{t('nav.replier')}</span></button>
         </div>
       </aside>
-      <main className="main"><SuperAdminDashboard /></main>
+      <main className="main"><TopBar notificationsPath="/super-admin/notifications" espace={t('sa.v.overview.eyebrow')} /><SuperAdminDashboard /></main>
     </div>
   );
 }
 
 function TenantSaaSLayout() {
-  const { user, logout } = useApp();
   const [collapsed, setCollapsed] = useState(() => window.innerWidth < 1100);
-  useEffect(() => { document.title = 'Mon abonnement · Espace entreprise'; }, []);
+  useEffect(() => { document.title = `${t('tp.monAbonnement')} · ${t('tp.espace')}`; }, []);
   return (
     <div className={cls('shell', collapsed && 'collapsed')}>
       <aside className="side">
-        <div className="side-brand"><div className="brand-motif" aria-hidden="true" /><span className="brand-name">Espace entreprise<small>Abonnement et boutiques</small></span></div>
-        <nav aria-label="Espace entreprise">
-          <Link to="/" className="nav-link on" title="Mon abonnement, mes boutiques et mes factures"><LuBuilding2 /><span>Mon compte</span></Link>
+        <div className="side-brand"><div className="brand-motif" aria-hidden="true" /><span className="brand-name">{t('tp.espace')}<small>{t('app.espaceSous')}</small></span></div>
+        <nav aria-label={t('tp.espace')}>
+          <Link to="/" className="nav-link on" title={t('app.monCompteTitre')}><LuBuilding2 /><span>{t('app.monCompte')}</span></Link>
         </nav>
         <div className="side-foot">
-          <div className="me"><span className="me-name">{user!.nom}</span><span className="me-role">{t('role.' + user!.role)}</span></div>
-          <button className="nav-link" onClick={() => { void logout(); }} title={t('nav.deconnexion')} aria-label={t('nav.deconnexion')}><LuLogOut /><span>{t('nav.deconnexion')}</span></button>
           <button className="nav-link collapse-btn" onClick={() => setCollapsed(c => !c)} aria-label={collapsed ? t('nav.deplier') : t('nav.replier')}>{collapsed ? <LuChevronsRight /> : <LuChevronsLeft />}<span>{t('nav.replier')}</span></button>
         </div>
       </aside>
-      <main className="main"><TenantPortal /></main>
+      <main className="main"><TopBar notificationsPath="/tenant/notifications" espace={t('tp.espace')} /><TenantPortal /></main>
     </div>
   );
 }

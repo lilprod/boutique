@@ -109,7 +109,7 @@ export default function TenantPortal() {
           setError(null);
         }
       } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? 'Impossible de charger votre espace entreprise.');
+        if (!cancelled) setError(e?.message ?? t('tp.erreurChargement'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -127,21 +127,21 @@ export default function TenantPortal() {
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e: any) {
-      setError(e?.message ?? 'Téléchargement impossible.');
+      setError(e?.message ?? t('tp.erreurTelechargement'));
     }
   };
 
   const enterBoutique = async () => {
     const result = await openBoutique();
-    if (!result.ok) setError(result.error ?? 'Impossible d’ouvrir la boutique.');
+    if (!result.ok) setError(result.error ?? t('tp.erreurBoutique'));
   };
 
   const intro = (title: React.ReactNode, actions?: React.ReactNode) => (
     <div className="page-head">
       <div>
-        <span className="eyebrow">Espace entreprise</span>
+        <span className="eyebrow">{t('tp.espace')}</span>
         <h1>{title}</h1>
-        <p className="muted-p page-sub">Suivez votre abonnement et votre licence, retrouvez vos factures et ouvrez vos boutiques.</p>
+        <p className="muted-p page-sub">{t('tp.sousTitre')}</p>
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </div>
@@ -150,7 +150,7 @@ export default function TenantPortal() {
   if (loading) {
     return (
       <>
-        {intro('Mon abonnement')}
+        {intro(t('tp.monAbonnement'))}
         <div className="stat-grid" role="status" aria-live="polite">
           <span className="sr-only">{t('app.chargement')}</span>
           {[0, 1, 2, 3].map(i => <div key={i} className="stat mute"><Skeleton w="60%" h={12} /><Skeleton w="45%" h={28} /><Skeleton w="70%" h={10} /></div>)}
@@ -162,16 +162,16 @@ export default function TenantPortal() {
   if (error) {
     return (
       <>
-        {intro('Mon abonnement')}
+        {intro(t('tp.monAbonnement'))}
         <div className="panel state-box" role="alert">
           <span className="state-icon bad"><LuCircleAlert /></span>
-          <div className="grow"><h2>Une erreur est survenue</h2><p className="muted-p">{error}</p></div>
+          <div className="grow"><h2>{t('tp.erreurTitre')}</h2><p className="muted-p">{error}</p></div>
           <button className="btn" onClick={() => window.location.reload()}>{t('common.reessayer')}</button>
         </div>
       </>
     );
   }
-  if (!data) return <>{intro('Mon abonnement')}<div className="panel"><Empty title="Aucune entreprise n’est associée à ce compte." /></div></>;
+  if (!data) return <>{intro(t('tp.monAbonnement'))}<div className="panel"><Empty title={t('tp.aucuneEntreprise')} /></div></>;
 
   const subStatus = data.subscription?.status ?? data.stats.subscription_status;
   const licStatus = data.license?.status ?? data.stats.license_status;
@@ -183,79 +183,79 @@ export default function TenantPortal() {
   return (
     <div className="view">
       {intro(data.tenant.nom, data.boutique_access && (
-        <button className="btn btn-primary" onClick={() => void enterBoutique()}><LuStore /> Ouvrir ma boutique <LuArrowRight /></button>
+        <button className="btn btn-primary" onClick={() => void enterBoutique()}><LuStore /> {t('tp.ouvrirBoutique')} <LuArrowRight /></button>
       ))}
 
       <div className="stat-grid">
         <div className="stat brand" style={{ ['--i' as string]: 0 } as React.CSSProperties}>
-          <div className="stat-top"><span className="stat-l">Formule actuelle</span><span className="stat-icon" aria-hidden="true"><LuLayers /></span></div>
-          <span className="stat-v stat-text">{planName ?? 'Aucune'}</span>
+          <div className="stat-top"><span className="stat-l">{t('tp.formuleActuelle')}</span><span className="stat-icon" aria-hidden="true"><LuLayers /></span></div>
+          <span className="stat-v stat-text">{planName ?? t('tp.aucune')}</span>
           <span className="stat-hint"><StatusBadge status={subStatus} /></span>
         </div>
         <div className={cls('stat', licStatus === 'active' ? 'green' : 'danger')} style={{ ['--i' as string]: 1 } as React.CSSProperties}>
-          <div className="stat-top"><span className="stat-l">Licence</span><span className="stat-icon" aria-hidden="true"><LuShieldCheck /></span></div>
+          <div className="stat-top"><span className="stat-l">{t('tp.licence')}</span><span className="stat-icon" aria-hidden="true"><LuShieldCheck /></span></div>
           <span className="stat-v stat-text">{t(`billing.status.${licStatus ?? 'none'}`)}</span>
-          <span className="stat-hint">{data.stats.license_expires_at ? `Valable jusqu’au ${fmtDate(data.stats.license_expires_at)}` : 'Pas de date d’expiration'}</span>
+          <span className="stat-hint">{data.stats.license_expires_at ? t('tp.valableJusqua', { d: fmtDate(data.stats.license_expires_at) }) : t('tp.sansExpiration')}</span>
         </div>
         <div className="stat gold" style={{ ['--i' as string]: 2 } as React.CSSProperties}>
-          <div className="stat-top"><span className="stat-l">Boutiques</span><span className="stat-icon" aria-hidden="true"><LuStore /></span></div>
+          <div className="stat-top"><span className="stat-l">{t('tp.boutiques')}</span><span className="stat-icon" aria-hidden="true"><LuStore /></span></div>
           <span className="stat-v"><CountUp value={data.stats.boutiques_total ?? data.boutiques.length} /></span>
-          {currentPlan?.max_boutiques != null && <span className="stat-hint">sur {currentPlan.max_boutiques} incluse(s) dans la formule</span>}
+          {currentPlan?.max_boutiques != null && <span className="stat-hint">{t('tp.boutiquesIncluses', { n: String(currentPlan.max_boutiques) })}</span>}
         </div>
         <div className="stat terra" style={{ ['--i' as string]: 3 } as React.CSSProperties}>
-          <div className="stat-top"><span className="stat-l">Utilisateurs</span><span className="stat-icon" aria-hidden="true"><LuUsers /></span></div>
+          <div className="stat-top"><span className="stat-l">{t('tp.utilisateurs')}</span><span className="stat-icon" aria-hidden="true"><LuUsers /></span></div>
           <span className="stat-v"><CountUp value={data.stats.users_total ?? 0} /></span>
-          {currentPlan?.max_utilisateurs != null && <span className="stat-hint">sur {currentPlan.max_utilisateurs} inclus dans la formule</span>}
+          {currentPlan?.max_utilisateurs != null && <span className="stat-hint">{t('tp.utilisateursInclus', { n: String(currentPlan.max_utilisateurs) })}</span>}
         </div>
       </div>
 
       <div className="grid-2">
         <section className="panel">
           <div className="panel-head">
-            <div><h2>Votre abonnement</h2><p className="panel-sub">Période en cours et clé de licence de votre entreprise.</p></div>
+            <div><h2>{t('tp.votreAbonnement')}</h2><p className="panel-sub">{t('tp.votreAbonnementSous')}</p></div>
             <StatusBadge status={data.subscription?.status} />
           </div>
           <dl className="facts">
-            <div><dt><LuCalendarClock /> Début</dt><dd>{dateOr(data.subscription?.starts_at)}</dd></div>
-            <div><dt><LuCalendarClock /> Fin</dt><dd>{dateOr(data.subscription?.ends_at)}</dd></div>
-            <div><dt><LuShieldCheck /> Licence</dt><dd>{data.license?.status ? <StatusBadge status={data.license.status} /> : '—'}</dd></div>
-            <div><dt><LuBadgeCheck /> Compte</dt><dd>{user?.nom ?? '—'}</dd></div>
-            <div className="wide"><dt><LuKeyRound /> Clé de licence</dt><dd className="mono key">{data.license?.cle ?? '—'}</dd></div>
+            <div><dt><LuCalendarClock /> {t('tp.debut')}</dt><dd>{dateOr(data.subscription?.starts_at)}</dd></div>
+            <div><dt><LuCalendarClock /> {t('tp.fin')}</dt><dd>{dateOr(data.subscription?.ends_at)}</dd></div>
+            <div><dt><LuShieldCheck /> {t('tp.licence')}</dt><dd>{data.license?.status ? <StatusBadge status={data.license.status} /> : '—'}</dd></div>
+            <div><dt><LuBadgeCheck /> {t('tp.compte')}</dt><dd>{user?.nom ?? '—'}</dd></div>
+            <div className="wide"><dt><LuKeyRound /> {t('tp.cleLicence')}</dt><dd className="mono key">{data.license?.cle ?? '—'}</dd></div>
           </dl>
 
           {/* Pas d'intégrateur de paiement : le renouvellement est enregistré par l'équipe de la plateforme à réception du paiement. */}
           <div className="sub-block">
-            <h3>Renouveler votre licence</h3>
+            <h3>{t('tp.renouveler')}</h3>
             {joursRestants !== null && joursRestants <= 7 && (
               <p className={cls('notice', joursRestants < 0 ? 'err' : 'warn')} role="status">
-                <LuCalendarClock /> {joursRestants < 0 ? 'Votre licence est expirée : la caisse de vos boutiques est bloquée.' : `Votre licence expire dans ${joursRestants} jour(s).`}
+                <LuCalendarClock /> {joursRestants < 0 ? t('tp.licenceExpiree') : t('tp.licenceExpireDans', { n: String(joursRestants) })}
               </p>
             )}
             <ol className="steps-list">
-              <li>Réglez votre abonnement en espèces, par carte, T-Money ou Flooz.</li>
-              <li>Transmettez à notre équipe la <strong>référence</strong> du paiement (n° de reçu, de transaction ou de ticket carte).</li>
-              <li>Votre licence est prolongée dès l’enregistrement du paiement ; la facture apparaît ci-dessous.</li>
+              <li>{t('tp.etape1')}</li>
+              <li>{t('tp.etape2.avant')}<strong>{t('tp.etape2.mot')}</strong>{t('tp.etape2.apres')}</li>
+              <li>{t('tp.etape3')}</li>
             </ol>
           </div>
         </section>
 
         <section className="panel">
           <div className="panel-head">
-            <div><h2>Formules disponibles</h2><p className="panel-sub">Pour changer de formule, indiquez-la à notre équipe lors de votre prochain paiement.</p></div>
+            <div><h2>{t('tp.formules')}</h2><p className="panel-sub">{t('tp.formulesSous')}</p></div>
           </div>
-          {plans.length === 0 ? <Empty title="Aucune formule publiée pour le moment." /> : (
+          {plans.length === 0 ? <Empty title={t('tp.aucuneFormule')} /> : (
             <ul className="plan-list">
               {plans.map((plan) => (
                 <li key={plan.id} className={cls('plan-row', String(plan.id) === String(data.subscription?.plan?.id ?? '') && 'on')}>
                   <div className="grow">
                     <strong>{plan.nom}</strong>
-                    <div className="muted-s">{plan.max_boutiques ?? '—'} boutique(s) · {plan.max_utilisateurs ?? '—'} utilisateur(s)</div>
+                    <div className="muted-s">{t('tp.limites', { b: String(plan.max_boutiques ?? '—'), u: String(plan.max_utilisateurs ?? '—') })}</div>
                   </div>
                   <div className="r">
                     <strong>{fcfa(plan.prix ?? 0)}</strong>
-                    <div className="muted-s">par {plan.intervalle === 'year' ? 'an' : 'mois'}</div>
+                    <div className="muted-s">{plan.intervalle === 'year' ? t('tp.parAn') : t('tp.parMois')}</div>
                   </div>
-                  {String(plan.id) === String(data.subscription?.plan?.id ?? '') && <span className="badge ok">Votre formule</span>}
+                  {String(plan.id) === String(data.subscription?.plan?.id ?? '') && <span className="badge ok">{t('tp.votreFormule')}</span>}
                 </li>
               ))}
             </ul>
@@ -265,16 +265,16 @@ export default function TenantPortal() {
 
       <section className="panel">
         <div className="panel-head">
-          <div><h2>Vos boutiques</h2><p className="panel-sub">Les points de vente rattachés à votre entreprise.</p></div>
+          <div><h2>{t('tp.vosBoutiques')}</h2><p className="panel-sub">{t('tp.vosBoutiquesSous')}</p></div>
           <span className="badge info">{data.boutiques.length}</span>
         </div>
-        {data.boutiques.length === 0 ? <Empty title="Aucune boutique n’est encore rattachée à votre entreprise." /> : (
+        {data.boutiques.length === 0 ? <Empty title={t('tp.aucuneBoutique')} /> : (
           <ul className="shop-grid">
             {data.boutiques.map((boutique, i) => (
               <li key={boutique.id} className="shop-card" style={{ ['--i' as string]: i } as React.CSSProperties}>
                 <div className="shop-top"><span className="shop-mark" aria-hidden="true" /><strong className="grow ellipsis">{boutique.nom}</strong><StatusBadge status={boutique.statut} /></div>
-                <div className="muted-s shop-line"><LuMapPin /> {boutique.adresse ?? 'Adresse non renseignée'}</div>
-                <div className="muted-s shop-line"><LuPhone /> {boutique.telephone ?? 'Téléphone non renseigné'}</div>
+                <div className="muted-s shop-line"><LuMapPin /> {boutique.adresse ?? t('tp.adresseInconnue')}</div>
+                <div className="muted-s shop-line"><LuPhone /> {boutique.telephone ?? t('tp.telephoneInconnu')}</div>
               </li>
             ))}
           </ul>
@@ -283,15 +283,15 @@ export default function TenantPortal() {
 
       <section className="panel">
         <div className="panel-head">
-          <div><h2>Factures et paiements</h2><p className="panel-sub">Téléchargez vos factures et les justificatifs transmis.</p></div>
+          <div><h2>{t('tp.factures')}</h2><p className="panel-sub">{t('tp.facturesSous')}</p></div>
           <span className="badge info">{payments.length}</span>
         </div>
         {payments.length === 0 ? (
-          <Empty title="Aucun paiement enregistré pour votre entreprise." />
+          <Empty title={t('tp.aucunPaiement')} />
         ) : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Date</th><th>Facture</th><th>Formule</th><th className="r">Montant</th><th>Moyen</th><th>Statut</th><th>Documents</th></tr></thead>
+              <thead><tr><th>{t('tp.col.date')}</th><th>{t('tp.col.facture')}</th><th>{t('tp.col.formule')}</th><th className="r">{t('tp.col.montant')}</th><th>{t('tp.col.moyen')}</th><th>{t('tp.col.statut')}</th><th>{t('tp.col.documents')}</th></tr></thead>
               <tbody>
                 {payments.map((payment) => (
                   <tr key={payment.id}>
@@ -303,8 +303,8 @@ export default function TenantPortal() {
                     <td><StatusBadge status={payment.status} /></td>
                     <td>
                       <div className="row-actions">
-                        {payment.invoice_number && <button className="btn btn-sm" type="button" onClick={() => void downloadPaymentFile(`/tenant/payments/${payment.id}/invoice`, `${payment.invoice_number}.html`)}><LuFileText /> Facture</button>}
-                        {payment.has_attachment && <button className="btn btn-sm" type="button" onClick={() => void downloadPaymentFile(`/tenant/payments/${payment.id}/attachment`, payment.attachment_name ?? `justificatif-${payment.id}`)}><LuPaperclip /> Justificatif</button>}
+                        {payment.invoice_number && <button className="btn btn-sm" type="button" onClick={() => void downloadPaymentFile(`/tenant/payments/${payment.id}/invoice`, `${payment.invoice_number}.html`)}><LuFileText /> {t('tp.facture')}</button>}
+                        {payment.has_attachment && <button className="btn btn-sm" type="button" onClick={() => void downloadPaymentFile(`/tenant/payments/${payment.id}/attachment`, payment.attachment_name ?? `justificatif-${payment.id}`)}><LuPaperclip /> {t('tp.justificatif')}</button>}
                       </div>
                     </td>
                   </tr>
@@ -318,11 +318,11 @@ export default function TenantPortal() {
       <section className="panel trust">
         <span className="state-icon ok"><LuShieldCheck /></span>
         <div className="grow">
-          <h2>Comment vos accès sont protégés</h2>
+          <h2>{t('tp.securiteTitre')}</h2>
           <ul className="trust-list">
-            <li>Chaque connexion est vérifiée par le serveur, selon votre licence active.</li>
-            <li>Le nombre de boutiques et d’utilisateurs suit votre formule.</li>
-            <li>Cet espace affiche l’état réel de votre abonnement et de votre licence.</li>
+            <li>{t('tp.securite1')}</li>
+            <li>{t('tp.securite2')}</li>
+            <li>{t('tp.securite3')}</li>
           </ul>
         </div>
       </section>
