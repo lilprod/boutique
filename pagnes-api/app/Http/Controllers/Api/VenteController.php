@@ -68,7 +68,7 @@ class VenteController extends Controller
     public function show(Request $request, Vente $vente)
     {
         abort_unless($vente->belongsToCurrentContext($request->user()), 404);
-        abort_unless($request->user()->estAdmin() || $vente->vendeur_id === $request->user()->id, 403, 'Cette vente ne vous appartient pas.');
+        abort_unless($request->user()->estAdmin() || $vente->vendeur_id === $request->user()->id, 403, __('Cette vente ne vous appartient pas.'));
 
         return $this->masquerCouts($vente->load('lignes', 'client', 'vendeur:id,nom'), $request);
     }

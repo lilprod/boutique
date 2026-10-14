@@ -33,9 +33,9 @@ class ProduitService
         $parametres = Parametre::actuel($utilisateur);
         foreach ($vendues as $u) {
             if (! $parametres->autorise($u)) {
-                throw new RegleMetierException(sprintf(
-                    'La vente au %s n’est pas autorisée par la politique de vente de cette boutique.', Produit::LIBELLES_UNITES[$u]
-                ));
+                throw new RegleMetierException(
+                    'La vente au :unite n’est pas autorisée par la politique de vente de cette boutique.', ['unite' => Produit::libelleUnite($u)]
+                );
             }
         }
         if (($donnees['yards_par_pagne'] ?? 0) <= 0) {
@@ -78,14 +78,14 @@ class ProduitService
             foreach ($variantes as $v) {
                 $sku = trim($v['sku'] ?? '');
                 if ($sku !== '' && Variante::where('tenant_id', $utilisateur->tenant_id)->where('boutique_id', $utilisateur->boutique_id)->where('sku', $sku)->where('id', '!=', $v['id'] ?? 0)->exists()) {
-                    throw new RegleMetierException("Le SKU « {$sku} » est déjà utilisé par un autre coloris.");
+                    throw new RegleMetierException('Le SKU « :sku » est déjà utilisé par un autre coloris.', ['sku' => $sku]);
                 }
             }
 
             $aSupprimer = $produit->variantes()->whereNotIn('id', $idsConserves ?: [0])->get();
             foreach ($aSupprimer as $v) {
                 if (LigneVente::where('variante_id', $v->id)->exists()) {
-                    throw new RegleMetierException("Le coloris « {$v->coloris} » a déjà été vendu : il ne peut pas être supprimé.");
+                    throw new RegleMetierException('Le coloris « :coloris » a déjà été vendu : il ne peut pas être supprimé.', ['coloris' => $v->coloris]);
                 }
             }
             // Un coloris jamais vendu peut quand même avoir un historique (stock initial, entrées) :
@@ -143,7 +143,7 @@ class ProduitService
         // Nom aléatoire et extension déduite du contenu réel (jamais celle envoyée par le client).
         $chemin = Storage::disk('photos')->putFileAs('produits', $fichier, Str::uuid().'.'.$fichier->extension());
         if ($chemin === false) {
-            throw new RegleMetierException("La photo n'a pas pu être enregistrée sur le serveur.");
+            throw new RegleMetierException('La photo n’a pas pu être enregistrée sur le serveur.');
         }
         $produit->forceFill(['image' => $chemin])->save();
         if ($ancien) {

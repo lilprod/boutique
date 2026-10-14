@@ -88,11 +88,11 @@ class ProduitController extends Controller
         $request->validate(
             ['image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048', 'dimensions:max_width=4000,max_height=4000']],
             [
-                'image.required' => 'Choisissez une photo.',
-                'image.uploaded' => 'La photo n\'a pas pu être envoyée (fichier trop lourd pour le serveur).',
-                'image.mimes' => 'La photo doit être au format JPEG, PNG ou WebP.',
-                'image.max' => 'La photo ne doit pas dépasser 2 Mo.',
-                'image.dimensions' => 'La photo est trop grande (4 000 px au plus de chaque côté).',
+                'image.required' => __('Choisissez une photo.'),
+                'image.uploaded' => __('La photo n\'a pas pu être envoyée (fichier trop lourd pour le serveur).'),
+                'image.mimes' => __('La photo doit être au format JPEG, PNG ou WebP.'),
+                'image.max' => __('La photo ne doit pas dépasser 2 Mo.'),
+                'image.dimensions' => __('La photo est trop grande (4 000 px au plus de chaque côté).'),
             ]
         );
 

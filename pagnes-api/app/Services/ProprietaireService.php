@@ -46,7 +46,7 @@ class ProprietaireService
                 ->whereIn('motif', $motifs)->where('proprietaire_id', '!=', $proprietaire->id)
                 ->with('proprietaire:id,nom')->first();
             if ($pris) {
-                throw new RegleMetierException(sprintf('Le motif « %s » appartient déjà à %s.', $pris->motif, $pris->proprietaire->nom));
+                throw new RegleMetierException('Le motif « :motif » appartient déjà à :nom.', ['motif' => $pris->motif, 'nom' => $pris->proprietaire->nom]);
             }
 
             $proprietaire->motifs()->whereNotIn('motif', $motifs)->delete();

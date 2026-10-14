@@ -11,14 +11,17 @@ use Illuminate\Support\Facades\Hash;
 /** Gestion des comptes vendeur/administrateur — réservé à l'administrateur. */
 class UserController extends Controller
 {
-    /** Messages affichés tels quels par le frontend : en français, avec le vocabulaire de l'interface. */
-    private const MESSAGES = [
-        'nom.required' => 'Le nom est obligatoire.',
-        'email.required' => "L'identifiant est obligatoire.",
-        'email.unique' => 'Cet identifiant est déjà utilisé.',
-        'mot_de_passe.required' => 'Le mot de passe est obligatoire.',
-        'mot_de_passe.min' => 'Le mot de passe doit contenir au moins 6 caractères.',
-    ];
+    /** Messages affichés tels quels par le frontend, avec le vocabulaire de l'interface, dans la langue de la requête. */
+    private static function messages(): array
+    {
+        return [
+            'nom.required' => __('Le nom est obligatoire.'),
+            'email.required' => __('L’identifiant est obligatoire.'),
+            'email.unique' => __('Cet identifiant est déjà utilisé.'),
+            'mot_de_passe.required' => __('Le mot de passe est obligatoire.'),
+            'mot_de_passe.min' => __('Le mot de passe doit contenir au moins 6 caractères.'),
+        ];
+    }
 
     public function index(Request $request)
     {
@@ -36,7 +39,7 @@ class UserController extends Controller
             'mot_de_passe' => 'required|string|min:6',
             'role' => 'required|in:admin,boutique_admin,vendeur',
             'actif' => 'required|boolean',
-        ], self::MESSAGES);
+        ], self::messages());
 
         $role = $data['role'] === 'admin' ? 'boutique_admin' : $data['role'];
 
@@ -61,7 +64,7 @@ class UserController extends Controller
             'mot_de_passe' => 'nullable|string|min:6',
             'role' => 'required|in:admin,boutique_admin,vendeur',
             'actif' => 'required|boolean',
-        ], self::MESSAGES);
+        ], self::messages());
 
         $role = $data['role'] === 'admin' ? 'boutique_admin' : $data['role'];
 
@@ -69,7 +72,7 @@ class UserController extends Controller
         $rolesAdmin = ['admin', 'boutique_admin'];
         if (in_array($user->role, $rolesAdmin, true) && ! $resteAdminActif
             && $this->usersFor($actor)->whereIn('role', $rolesAdmin)->where('actif', true)->where('id', '!=', $user->id)->doesntExist()) {
-            return response()->json(['message' => 'Il doit toujours rester un administrateur actif.'], 422);
+            return response()->json(['message' => __('Il doit toujours rester un administrateur actif.')], 422);
         }
 
         $user->update(array_filter([

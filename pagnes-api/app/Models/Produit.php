@@ -24,6 +24,12 @@ class Produit extends Model
 
     public const LIBELLES_UNITES = ['pagne' => 'pagne', 'yard' => 'yard', 'metre' => 'mètre'];
 
+    /** Nom de l'unité dans la langue de la requête (« mètre » / « metre »). */
+    public static function libelleUnite(string $unite): string
+    {
+        return __(self::LIBELLES_UNITES[$unite] ?? $unite);
+    }
+
     // Le JSON expose `image_url` (adresse complète) et non le chemin de stockage.
     protected $hidden = ['image'];
 

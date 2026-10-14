@@ -7,6 +7,7 @@ use App\Models\Boutique;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Tenant;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -24,7 +25,7 @@ class TenantPortalController extends Controller
     {
         $user = $request->user();
 
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $tenant = Tenant::with(['boutiques', 'subscription.plan', 'licenses.subscription'])->findOrFail($user->tenant_id);
         $subscription = $tenant->subscription()->with('plan')->first();
@@ -51,10 +52,19 @@ class TenantPortalController extends Controller
         ]);
     }
 
+    /** Cloche de l'espace entreprise : licence qui expire, paiements des 30 derniers jours. */
+    public function notifications(Request $request, NotificationService $notifications)
+    {
+        $user = $request->user();
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
+
+        return response()->json($notifications->pourTenant(Tenant::findOrFail($user->tenant_id)));
+    }
+
     public function boutiques(Request $request)
     {
         $user = $request->user();
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         return response()->json(
             Boutique::where('tenant_id', $user->tenant_id)->orderBy('nom')->get()
@@ -64,7 +74,7 @@ class TenantPortalController extends Controller
     public function subscription(Request $request)
     {
         $user = $request->user();
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $tenant = Tenant::with(['subscription.plan', 'licenses'])->findOrFail($user->tenant_id);
 
@@ -78,7 +88,7 @@ class TenantPortalController extends Controller
     public function payments(Request $request)
     {
         $user = $request->user();
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $tenant = Tenant::findOrFail($user->tenant_id);
 
@@ -108,7 +118,7 @@ class TenantPortalController extends Controller
     public function invoice(Request $request, int $paymentId): Response
     {
         $user = $request->user();
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $payment = Tenant::findOrFail($user->tenant_id)->payments()
             ->with(['tenant', 'subscription.plan'])
@@ -120,7 +130,7 @@ class TenantPortalController extends Controller
     public function attachment(Request $request, int $paymentId): StreamedResponse
     {
         $user = $request->user();
-        abort_unless($user && $user->tenant_id, 403, 'Aucun tenant associé à ce compte.');
+        abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $payment = Tenant::findOrFail($user->tenant_id)->payments()->findOrFail($paymentId);
         abort_unless($payment->attachment_path && Storage::disk('local')->exists($payment->attachment_path), 404);

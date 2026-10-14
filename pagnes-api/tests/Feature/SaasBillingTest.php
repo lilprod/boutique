@@ -558,8 +558,9 @@ class SaasBillingTest extends TestCase
 
     public function test_renouvellement_anticipe_prolonge_depuis_la_fin_en_cours(): void
     {
-        ['tenant' => $tenant, 'plan' => $plan, 'superAdmin' => $sa] = $this->contexteRenouvellement(fin: now()->addDays(10)->startOfSecond());
+        // Une seule date de référence : deux appels à now() peuvent tomber de part et d'autre d'une seconde.
         $finActuelle = now()->addDays(10)->startOfSecond();
+        ['tenant' => $tenant, 'plan' => $plan, 'superAdmin' => $sa] = $this->contexteRenouvellement(fin: $finActuelle->copy());
 
         $r = $this->renouveler($tenant, ['plan_id' => $plan->id, 'periodes' => 3, 'amount' => 75000, 'payment_reference' => 'TM-889900', 'notes' => 'Reçu au bureau'])
             ->assertCreated();

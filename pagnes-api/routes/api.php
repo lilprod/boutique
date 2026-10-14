@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ParametreController;
 use App\Http\Controllers\Api\ProduitController;
 use App\Http\Controllers\Api\PromotionController;
@@ -23,6 +24,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
     Route::middleware('tenant_active')->prefix('tenant')->group(function () {
         Route::get('/plans', [TenantPortalController::class, 'plans']);
         Route::get('/dashboard', [TenantPortalController::class, 'dashboard']);
+        Route::get('/notifications', [TenantPortalController::class, 'notifications']);
         Route::get('/boutiques', [TenantPortalController::class, 'boutiques']);
         Route::get('/subscription', [TenantPortalController::class, 'subscription']);
         Route::get('/payments', [TenantPortalController::class, 'payments']);
@@ -33,6 +35,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
 
     Route::middleware('super_admin')->prefix('super-admin')->group(function () {
         Route::get('/dashboard', [SuperAdminController::class, 'dashboard']);
+        Route::get('/notifications', [SuperAdminController::class, 'notifications']);
         Route::get('/tenants', [SuperAdminController::class, 'index']);
         Route::get('/payments', [SuperAdminController::class, 'payments']);
         Route::get('/payments/export.csv', [SuperAdminController::class, 'exportPayments']);
@@ -55,6 +58,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
         Route::get('parametres', [ParametreController::class, 'show']);
         Route::get('proprietaires', [ProprietaireController::class, 'index']);
         Route::get('promotions', [PromotionController::class, 'index']);
+        Route::get('notifications', [NotificationController::class, 'boutique']);
 
         Route::get('clients', [ClientController::class, 'index']);
         Route::post('clients', [ClientController::class, 'store']);

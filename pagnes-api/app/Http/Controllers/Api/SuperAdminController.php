@@ -10,6 +10,7 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Services\LicenceService;
+use App\Services\NotificationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,17 +24,27 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SuperAdminController extends Controller
 {
-    private const MESSAGES_PAIEMENT = [
-        'payment_reference.unique' => 'Cette référence a déjà été enregistrée pour ce mode de paiement.',
-        'payment_reference.required' => 'La référence du paiement est obligatoire (n° de reçu, de transaction ou de ticket carte).',
-        'payment_method.in' => 'Mode de paiement invalide : espèces, carte, T-Money ou Flooz.',
-    ];
+    /** Messages de saisie d'un paiement, dans la langue de la requête. */
+    private static function messagesPaiement(): array
+    {
+        return [
+            'payment_reference.unique' => __('Cette référence a déjà été enregistrée pour ce mode de paiement.'),
+            'payment_reference.required' => __('La référence du paiement est obligatoire (n° de reçu, de transaction ou de ticket carte).'),
+            'payment_method.in' => __('Mode de paiement invalide : espèces, carte, T-Money ou Flooz.'),
+        ];
+    }
 
     public function index(Request $request)
     {
         return response()->json(
             Tenant::with(['boutiques', 'subscription.plan', 'licenses'])->orderBy('nom')->paginate(20)
         );
+    }
+
+    /** Cloche de la console : licences à renouveler, paiements à vérifier, essais qui se terminent. */
+    public function notifications(NotificationService $notifications): JsonResponse
+    {
+        return response()->json($notifications->pourSuperAdmin());
     }
 
     public function dashboard(): JsonResponse
@@ -309,7 +320,7 @@ class SuperAdminController extends Controller
             'periodes' => ['required', 'integer', 'min:1', 'max:36'],
             'amount' => ['required', 'integer', 'min:0'],
             ...$this->reglesPaiement($request),
-        ], self::MESSAGES_PAIEMENT);
+        ], self::messagesPaiement());
 
         $resultat = $licences->renouveler(
             $tenant, Plan::findOrFail($data['plan_id']), (int) $data['periodes'],
@@ -341,7 +352,7 @@ class SuperAdminController extends Controller
             'status' => ['required', 'in:paid,unpaid,rejected,pending'],
             'subscription_id' => ['nullable', 'exists:subscriptions,id'],
             ...$this->reglesPaiement($request),
-        ], self::MESSAGES_PAIEMENT);
+        ], self::messagesPaiement());
 
         $subscription = $tenant->subscription()->first();
         if ($data['subscription_id'] ?? null) {

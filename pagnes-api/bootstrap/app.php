@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\DefinirLangue;
 use App\Http\Middleware\EnsureActif;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureBoutiqueContext;
@@ -24,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'super_admin' => EnsureSuperAdmin::class,
             'tenant_active' => EnsureTenantActive::class,
         ]);
+        // Avant l'authentification : même un refus de connexion revient dans la langue choisie.
+        $middleware->api(prepend: [DefinirLangue::class]);
         // API pure : pas de page de connexion vers laquelle rediriger, un invité reçoit un 401 JSON.
         $middleware->redirectGuestsTo(fn () => null);
     })

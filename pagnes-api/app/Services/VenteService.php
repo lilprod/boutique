@@ -71,10 +71,10 @@ class VenteService
                     throw new RegleMetierException('Choisissez le client dont les points sont utilisés.');
                 }
                 if ($pointsUtilises < $parametres->fidelite_seuil) {
-                    throw new RegleMetierException(sprintf('Il faut utiliser au moins %d points.', $parametres->fidelite_seuil));
+                    throw new RegleMetierException('Il faut utiliser au moins :n points.', ['n' => $parametres->fidelite_seuil]);
                 }
                 if ($pointsUtilises > $client->points) {
-                    throw new RegleMetierException(sprintf('Solde insuffisant : %s n’a que %d points.', $client->nom, max(0, $client->points)));
+                    throw new RegleMetierException('Solde insuffisant : :nom n’a que :n points.', ['nom' => $client->nom, 'n' => max(0, $client->points)]);
                 }
             }
 
@@ -99,12 +99,12 @@ class VenteService
                 }
                 $produit = $variante->produit;
                 $unite = $l['unite'];
-                $libelle = Produit::LIBELLES_UNITES[$unite] ?? $unite;
+                $libelle = Produit::libelleUnite($unite);
                 if (! $parametres->autorise($unite)) {
-                    throw new RegleMetierException(sprintf('La vente au %s n’est pas autorisée dans cette boutique.', $libelle));
+                    throw new RegleMetierException('La vente au :unite n’est pas autorisée dans cette boutique.', ['unite' => $libelle]);
                 }
                 if (! $produit->vendAu($unite)) {
-                    throw new RegleMetierException(sprintf('« %s » ne se vend pas au %s.', $produit->nom, $libelle));
+                    throw new RegleMetierException('« :produit » ne se vend pas au :unite.', ['produit' => $produit->nom, 'unite' => $libelle]);
                 }
                 $prixUnitaire = $produit->prixPour($unite);
                 $brut = (int) round($l['quantite'] * $prixUnitaire);
@@ -137,20 +137,18 @@ class VenteService
             if ($parametres->vendUniquementAuPagne()) {
                 $quantiteTotale = array_sum(array_map(fn ($l) => (float) $l['quantite'], $cart));
                 if ($quantiteTotale + 0.001 < $parametres->quantite_min_panier) {
-                    throw new RegleMetierException(sprintf(
-                        'Quantité minimale par vente : %s pagne(s).',
-                        rtrim(rtrim(number_format($parametres->quantite_min_panier, 2, ',', ''), '0'), ',')
-                    ));
+                    throw new RegleMetierException('Quantité minimale par vente : :n pagne(s).', [
+                        'n' => rtrim(rtrim(number_format($parametres->quantite_min_panier, 2, ',', ''), '0'), ','),
+                    ]);
                 }
             }
 
             foreach ($besoins as $varianteId => $quantite) {
                 $variante = $variantes->get($varianteId);
                 if (round($quantite, 2) > (float) $variante->stock) {
-                    throw new RegleMetierException(sprintf(
-                        'Stock insuffisant pour %s — %s : %s %s(s) disponible(s).',
-                        $variante->produit->nom, $variante->coloris, $variante->stock, Produit::LIBELLES_UNITES[$uniteStock]
-                    ));
+                    throw new RegleMetierException('Stock insuffisant pour :produit — :coloris : :stock :unite(s) disponible(s).', [
+                        'produit' => $variante->produit->nom, 'coloris' => $variante->coloris, 'stock' => $variante->stock, 'unite' => Produit::libelleUnite($uniteStock),
+                    ]);
                 }
             }
 
@@ -162,19 +160,15 @@ class VenteService
             $remiseEffPct = $basePlafond > 0 ? (($basePlafond - $total) / $basePlafond) * 100 : 0;
 
             if (! $vendeur->estAdmin() && $remiseEffPct > $parametres->remise_max_vendeur + 0.001) {
-                throw new RegleMetierException(sprintf(
-                    'Remise trop élevée : au-delà de %d %%, un administrateur est requis.',
-                    $parametres->remise_max_vendeur
-                ));
+                throw new RegleMetierException('Remise trop élevée : au-delà de :max %, un administrateur est requis.', ['max' => $parametres->remise_max_vendeur]);
             }
 
             // Points de fidélité : un droit du client, hors plafond vendeur, déduit après toutes les remises.
             $remisePoints = $parametres->remisePourPoints($pointsUtilises);
             if ($remisePoints > $total) {
-                throw new RegleMetierException(sprintf(
-                    'Trop de points pour ce ticket : au plus %d points.',
-                    $parametres->fidelite_valeur_point > 0 ? intdiv($total, $parametres->fidelite_valeur_point) : 0
-                ));
+                throw new RegleMetierException('Trop de points pour ce ticket : au plus :n points.', [
+                    'n' => $parametres->fidelite_valeur_point > 0 ? intdiv($total, $parametres->fidelite_valeur_point) : 0,
+                ]);
             }
             $total -= $remisePoints;
             $pointsGagnes = $client ? $parametres->pointsGagnes($total) : 0;

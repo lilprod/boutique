@@ -11,7 +11,7 @@ class EnsureSuperAdmin
     public function handle(Request $request, Closure $next): Response
     {
         if (! $request->user() || ! $request->user()->estSuperAdmin()) {
-            abort(403, 'Cette action est réservée au super administrateur.');
+            abort(403, __('Cette action est réservée au super administrateur.'));
         }
 
         return $next($request);

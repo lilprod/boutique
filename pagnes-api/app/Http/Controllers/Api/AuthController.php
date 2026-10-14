@@ -17,7 +17,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $data['identifiant'])->first();
         if (!$user || !$user->actif || !Hash::check($data['mot_de_passe'], $user->password)) {
-            throw ValidationException::withMessages(['identifiant' => 'Identifiant ou mot de passe incorrect.']);
+            throw ValidationException::withMessages(['identifiant' => __('Identifiant ou mot de passe incorrect.')]);
         }
 
         return response()->json([
@@ -32,8 +32,15 @@ class AuthController extends Controller
         return response()->noContent();
     }
 
+    /** Session en cours, avec de quoi remplir le menu profil (identifiant, entreprise et boutique de rattachement). */
     public function me(Request $request)
     {
-        return $request->user()->only(['id', 'nom', 'role']);
+        $user = $request->user()->loadMissing('tenant:id,nom', 'boutique:id,nom');
+
+        return $user->only(['id', 'nom', 'role']) + [
+            'identifiant' => $user->email,
+            'entreprise' => $user->tenant?->nom,
+            'boutique' => $user->boutique?->nom,
+        ];
     }
 }

@@ -12,7 +12,7 @@ class EnsureActif
     public function handle(Request $request, Closure $next): Response
     {
         if ($request->user() && !$request->user()->actif) {
-            abort(401, 'Ce compte est désactivé.');
+            abort(401, __('Ce compte est désactivé.'));
         }
 
         return $next($request);

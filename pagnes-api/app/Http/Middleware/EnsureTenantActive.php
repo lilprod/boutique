@@ -13,7 +13,7 @@ class EnsureTenantActive
         $user = $request->user();
 
         if (! $user) {
-            abort(401, 'Authentification requise.');
+            abort(401, __('Authentification requise.'));
         }
 
         if ($user->is_super_admin) {
@@ -21,7 +21,7 @@ class EnsureTenantActive
         }
 
         if (! $user->tenantActif()) {
-            abort(403, 'Le tenant n\'a pas de licence active ou un abonnement valide.');
+            abort(403, __('Le tenant n\'a pas de licence active ou un abonnement valide.'));
         }
 
         return $next($request);

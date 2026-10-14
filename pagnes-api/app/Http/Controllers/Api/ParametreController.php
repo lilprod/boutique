@@ -39,7 +39,7 @@ class ParametreController extends Controller
             'fidelite_expiration_mois' => 'sometimes|integer|min:0|max:120',
         ]);
         if (! $data['autorise_pagne'] && ! $data['autorise_yard'] && ! $data['autorise_metre']) {
-            return response()->json(['message' => 'Autorisez au moins une unité de vente.'], 422);
+            return response()->json(['message' => __('Autorisez au moins une unité de vente.')], 422);
         }
         $user = $request->user();
         $id = Parametre::actuel($user)->id;

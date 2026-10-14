@@ -68,10 +68,10 @@ class PromotionController extends Controller
             'fin' => 'nullable|date|after_or_equal:debut',
             'actif' => 'sometimes|boolean',
         ], [
-            'cible_texte.required_if' => 'Indiquez le type ou le motif visé.',
-            'produit_id.required_if' => 'Choisissez le produit visé.',
-            'variante_id.required_if' => 'Choisissez le coloris visé.',
-            'fin.after_or_equal' => 'La date de fin doit suivre la date de début.',
+            'cible_texte.required_if' => __('Indiquez le type ou le motif visé.'),
+            'produit_id.required_if' => __('Choisissez le produit visé.'),
+            'variante_id.required_if' => __('Choisissez le coloris visé.'),
+            'fin.after_or_equal' => __('La date de fin doit suivre la date de début.'),
         ]);
 
         // Règles qui dépendent de plusieurs champs.
