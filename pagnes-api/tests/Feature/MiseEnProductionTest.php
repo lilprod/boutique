@@ -165,4 +165,24 @@ class MiseEnProductionTest extends TestCase
             ->assertJsonCount(2, 'transactions')->assertJsonPath('pagination.total', 3)
             ->assertJsonPath('totals.paid', 3)->assertJsonPath('totals.paid_amount', 6000); // les totaux portent sur toute la liste
     }
+
+    // Vérification avant déploiement
+
+    public function test_la_verification_liste_les_entreprises_qui_perdent_l_acces(): void
+    {
+        $ok = $this->entreprise();
+        $annule = $this->entreprise();
+        $annule['sub']->update(['status' => 'cancelled']); // licence encore active : accès avant, plus après
+
+        $this->artisan('plateforme:verifier-acces')
+            ->expectsOutputToContain('PERDRONT')
+            ->expectsOutputToContain($annule['s'])
+            ->doesntExpectOutputToContain($ok['s'])
+            ->assertSuccessful();
+
+        $annule['sub']->update(['status' => 'active']);
+        $this->artisan('plateforme:verifier-acces')
+            ->expectsOutputToContain('Aucune entreprise ne change')
+            ->assertSuccessful();
+    }
 }

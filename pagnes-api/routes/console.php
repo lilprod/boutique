@@ -2,6 +2,7 @@
 
 use App\Models\Client;
 use App\Models\Parametre;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Services\FideliteService;
 use Illuminate\Foundation\Inspiring;
@@ -60,3 +61,75 @@ Artisan::command('plateforme:super-admin {identifiant} {--nom=Équipe Plateforme
 
     return 0;
 })->purpose('Crée ou réinitialise le compte super administrateur');
+
+/**
+ * À lancer AVANT de déployer les nouvelles règles d'accès (lecture seule, rien n'est modifié) :
+ * liste les entreprises dont l'accès change entre l'ancienne règle (abonnement OU licence
+ * valable, essai jugé sur ends_at seul) et la nouvelle (Tenant::isActive).
+ */
+Artisan::command('plateforme:verifier-acces', function () {
+    $maintenant = now();
+    $ancienAcces = function (Tenant $t) use ($maintenant): bool {
+        if ($t->statut !== 'active') {
+            return false;
+        }
+        $abonnement = $t->subscriptions()->whereIn('status', ['active', 'trial'])
+            ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>=', $maintenant))->exists();
+        $licence = $t->licenses()->where('status', 'active')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>=', $maintenant))->exists();
+
+        return $abonnement || $licence;
+    };
+    $raison = function (Tenant $t): string {
+        $licence = $t->licenses()->latest('id')->first();
+        if ($licence?->status === 'suspended') {
+            return 'licence suspendue';
+        }
+        $sub = $t->subscriptions()->latest('starts_at')->latest('id')->first();
+        if (! $sub) {
+            return 'aucun abonnement et licence non valable';
+        }
+        if ($sub->status === 'trial') {
+            $fin = $sub->trial_ends_at ?? $sub->ends_at;
+
+            return $fin ? 'essai terminé le '.$fin->format('d/m/Y') : 'essai sans date de fin';
+        }
+        if (in_array($sub->status, ['cancelled', 'expired'], true)) {
+            $suite = $licence && $licence->status === 'active' ? ', licence encore active jusqu’au '.($licence->expires_at?->format('d/m/Y') ?? '—') : '';
+
+            return 'abonnement '.($sub->status === 'cancelled' ? 'annulé' : 'expiré').$suite;
+        }
+
+        return 'abonnement terminé le '.($sub->ends_at?->format('d/m/Y') ?? '—');
+    };
+
+    $perdent = [];
+    $gagnent = [];
+    foreach (Tenant::orderBy('nom')->get() as $t) {
+        $avant = $ancienAcces($t);
+        $apres = $t->isActive();
+        $ligne = [$t->id, $t->nom, $t->users()->where('actif', true)->count()];
+        if ($avant && ! $apres) {
+            $perdent[] = [...$ligne, $raison($t)];
+        } elseif (! $avant && $apres) {
+            $gagnent[] = [...$ligne, 'essai encore en cours (fin d’essai à venir)'];
+        }
+    }
+
+    $this->info(Tenant::count().' entreprise(s) vérifiée(s).');
+    if (! $perdent && ! $gagnent) {
+        $this->info('Aucune entreprise ne change d’accès : déploiement sans effet pour les clients.');
+
+        return 0;
+    }
+    if ($perdent) {
+        $this->warn(count($perdent).' entreprise(s) PERDRONT l’accès au déploiement :');
+        $this->table(['ID', 'Entreprise', 'Comptes actifs', 'Raison'], $perdent);
+    }
+    if ($gagnent) {
+        $this->warn(count($gagnent).' entreprise(s) RETROUVERONT l’accès au déploiement :');
+        $this->table(['ID', 'Entreprise', 'Comptes actifs', 'Raison'], $gagnent);
+    }
+
+    return 0;
+})->purpose('Liste les entreprises dont l’accès change avec les nouvelles règles (lecture seule)');

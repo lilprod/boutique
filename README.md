@@ -86,7 +86,7 @@ Ce sont des comptes de démonstration aux mots de passe publics : les seeders `D
 ## Mise en production
 
 1. **Configuration** : partir de `pagnes-api/.env.production.example` (copié en `.env`), pas de `.env.example`, qui sert au développement. `APP_DEBUG=false` est obligatoire ; en production l'API le force de toute façon à `false` et le signale dans le journal.
-2. **Base** : `php artisan migrate --force`, sans seeder. `php artisan db:seed` seul ne crée aucun compte.
+2. **Base** : avant de déployer une nouvelle version, `php artisan plateforme:verifier-acces` (lecture seule) liste les entreprises dont l'accès changera avec les règles d'abonnement en vigueur. Puis `php artisan migrate --force`, sans seeder. `php artisan db:seed` seul ne crée aucun compte.
 3. **Premier compte** : `php artisan plateforme:super-admin <identifiant>` crée le super administrateur ; le mot de passe (12 caractères au moins) est saisi au clavier, jamais en argument. La même commande le réinitialise.
 4. **Entreprises** : le super admin crée chaque entreprise avec le compte de son gérant, qui crée ensuite ses propres comptes (8 caractères au moins par mot de passe).
 5. **En-têtes de sécurité** : l'API les envoie elle-même (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, et HSTS en HTTPS). Le frontend est un site statique : configurez sur son serveur web au moins `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` et une CSP qui autorise l'adresse de l'API dans `connect-src` et `img-src` (photos des produits).
