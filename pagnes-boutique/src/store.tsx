@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartLine, Client, DB, ModePaiement, Parametres, Produit, Promotion, Proprietaire, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { ApiError, del, get, post, put, setUnauthorizedHandler, token } from './api';
+import { ApiError, del, get, getAll, post, put, setUnauthorizedHandler, token } from './api';
 import { fromClient, fromParametres, fromProduit, fromPromotion, fromProprietaire, fromUser, fromVente, toClient, toParametres, toProduit, toPromotion, toProprietaire, toUser, toVariante, toVente } from './lib/mappers';
 import { buildLignes, minimumNonAtteint, prixUnitaire, refusPoints, remisePoints, totaux, UNITES, vendAu } from './lib/calc';
 import { num, r2 } from './lib/format';
@@ -112,7 +112,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const admin = currentRole === 'admin' || currentRole === 'boutique_admin' || (currentRole === 'tenant_admin' && shopModeRef.current);
     const [produits, clients, parametres, comptes, fournisseurs, proprietaires, promotions] = await Promise.all([
       want.has('produits') ? get<any[]>('/produits') : null,
-      want.has('clients') ? get<any[]>('/clients') : null,
+      want.has('clients') ? getAll<any>('/clients') : null, // liste paginée côté API
       want.has('parametres') ? get('/parametres') : null,
       want.has('users') && admin ? get<any[]>('/users') : null,
       want.has('fournisseurs') && admin ? get<string[]>('/fournisseurs') : null,
@@ -346,7 +346,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveUser: async u => {
       const exists = dbRef.current.users.some(x => x.id === u.id);
       if (!u.nom.trim() || !u.identifiant.trim() || (!exists && !u.motDePasse.trim())) return fail(t('err.champsUtilisateur'));
-      if (u.motDePasse.trim() && u.motDePasse.trim().length < 6) return fail(t('err.mdpCourt'));
+      if (u.motDePasse.trim() && u.motDePasse.trim().length < 8) return fail(t('err.mdpCourt'));
       return run(async () => {
         await (exists ? put(`/users/${u.id}`, fromUser(u)) : post('/users', fromUser(u)));
         await load(['users']);

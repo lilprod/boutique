@@ -80,7 +80,7 @@ class DroitsEtAbonnementsTest extends TestCase
         $c = $this->entreprise();
         Sanctum::actingAs($c['badmin']);
 
-        $this->postJson('/api/users', ['nom' => 'X', 'email' => 'x-'.$c['s'], 'mot_de_passe' => 'abcdef', 'role' => 'tenant_admin', 'actif' => true])
+        $this->postJson('/api/users', ['nom' => 'X', 'email' => 'x-'.$c['s'], 'mot_de_passe' => 'abcdefgh', 'role' => 'tenant_admin', 'actif' => true])
             ->assertForbidden();
         $this->putJson('/api/users/'.$c['vendeur']->id, $this->fiche($c['vendeur'], ['role' => 'tenant_admin']))->assertForbidden();
         $this->putJson('/api/users/'.$c['badmin']->id, $this->fiche($c['badmin'], ['role' => 'tenant_admin']))->assertForbidden();
@@ -132,7 +132,7 @@ class DroitsEtAbonnementsTest extends TestCase
     {
         $c = $this->entreprise(3); // gérant, admin de boutique et vendeur : l'offre est pleine
         Sanctum::actingAs($c['gerant']);
-        $nouveau = ['nom' => 'N', 'email' => 'n-'.$c['s'], 'mot_de_passe' => 'abcdef', 'role' => 'vendeur', 'actif' => true];
+        $nouveau = ['nom' => 'N', 'email' => 'n-'.$c['s'], 'mot_de_passe' => 'abcdefgh', 'role' => 'vendeur', 'actif' => true];
 
         $this->postJson('/api/users', $nouveau)->assertStatus(422);
         // Un compte créé désactivé n'occupe pas de place.

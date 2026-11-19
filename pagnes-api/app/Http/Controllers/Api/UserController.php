@@ -19,7 +19,7 @@ class UserController extends Controller
             'email.required' => __('L’identifiant est obligatoire.'),
             'email.unique' => __('Cet identifiant est déjà utilisé.'),
             'mot_de_passe.required' => __('Le mot de passe est obligatoire.'),
-            'mot_de_passe.min' => __('Le mot de passe doit contenir au moins 6 caractères.'),
+            'mot_de_passe.min' => __('Le mot de passe doit contenir au moins 8 caractères.'),
         ];
     }
 
@@ -49,7 +49,7 @@ class UserController extends Controller
         $data = $request->validate([
             'nom' => 'required|string|max:150',
             'email' => 'required|string|max:150|unique:users,email',
-            'mot_de_passe' => 'required|string|min:6',
+            'mot_de_passe' => 'required|string|min:8',
             'role' => 'required|in:admin,tenant_admin,boutique_admin,vendeur',
             'actif' => 'required|boolean',
         ], self::messages());
@@ -78,7 +78,7 @@ class UserController extends Controller
         $data = $request->validate([
             'nom' => 'required|string|max:150',
             'email' => 'required|string|max:150|unique:users,email,'.$user->id,
-            'mot_de_passe' => 'nullable|string|min:6',
+            'mot_de_passe' => 'nullable|string|min:8',
             'role' => 'required|in:admin,tenant_admin,boutique_admin,vendeur',
             'actif' => 'required|boolean',
         ], self::messages());

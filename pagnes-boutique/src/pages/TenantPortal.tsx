@@ -85,11 +85,19 @@ const toneOf = (s?: string | null): Tone => {
 const StatusBadge = ({ status }: { status?: string | null }) => <span className={cls('badge', toneOf(status))}>{t(`billing.status.${status ?? 'none'}`)}</span>;
 const dateOr = (iso?: string | null) => (iso ? fmtDate(iso) : '—');
 
+/** Réponse de /tenant/payments : une page de factures et sa position dans la liste. */
+interface PaymentsPage {
+  transactions: PaymentTransaction[];
+  pagination?: { current_page: number; last_page: number; total: number };
+}
+
 export default function TenantPortal() {
   const { user, openBoutique } = useApp();
   const [data, setData] = useState<TenantPortalData | null>(null);
   const [plans, setPlans] = useState<PlanSummary[]>([]);
   const [payments, setPayments] = useState<PaymentTransaction[]>([]);
+  const [paymentsPage, setPaymentsPage] = useState<PaymentsPage['pagination']>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -100,12 +108,13 @@ export default function TenantPortal() {
         const [dashboard, planList, billing] = await Promise.all([
           get<TenantPortalData>('/tenant/dashboard'),
           get<PlanSummary[]>('/tenant/plans'),
-          get<{ transactions: PaymentTransaction[] }>('/tenant/payments'),
+          get<PaymentsPage>('/tenant/payments'),
         ]);
         if (!cancelled) {
           setData(dashboard);
           setPlans(planList);
           setPayments(billing.transactions ?? []);
+          setPaymentsPage(billing.pagination);
           setError(null);
         }
       } catch (e: any) {
@@ -116,6 +125,21 @@ export default function TenantPortal() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  /* Factures paginées : les pages suivantes s'ajoutent à la liste. */
+  const morePayments = async () => {
+    if (!paymentsPage || paymentsPage.current_page >= paymentsPage.last_page) return;
+    setLoadingMore(true);
+    try {
+      const next = await get<PaymentsPage>(`/tenant/payments?page=${paymentsPage.current_page + 1}`);
+      setPayments(prev => [...prev, ...(next.transactions ?? [])]);
+      setPaymentsPage(next.pagination);
+    } catch (e: any) {
+      setError(e?.message ?? t('tp.erreurChargement'));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const downloadPaymentFile = async (path: string, filename: string) => {
     try {
@@ -284,7 +308,7 @@ export default function TenantPortal() {
       <section className="panel">
         <div className="panel-head">
           <div><h2>{t('tp.factures')}</h2><p className="panel-sub">{t('tp.facturesSous')}</p></div>
-          <span className="badge info">{payments.length}</span>
+          <span className="badge info">{paymentsPage?.total ?? payments.length}</span>
         </div>
         {payments.length === 0 ? (
           <Empty title={t('tp.aucunPaiement')} />
@@ -311,6 +335,8 @@ export default function TenantPortal() {
                 ))}
               </tbody>
             </table>
+            {paymentsPage && paymentsPage.current_page < paymentsPage.last_page
+              && <div className="table-foot"><button className="btn btn-sm" type="button" disabled={loadingMore} onClick={() => void morePayments()}>{t('common.voirPlus')}</button></div>}
           </div>
         )}
       </section>

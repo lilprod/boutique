@@ -20,7 +20,7 @@ Ordre : base de données, puis API, puis frontend.
 
 ### API
 
-Prérequis : PHP 8.3 ou plus (extensions `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`), Composer, MySQL 8+ ou MariaDB.
+Prérequis : PHP 8.3 ou plus (extensions `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`), Composer, MySQL 8+ ou MariaDB. Les dépendances sont résolues pour PHP 8.3 (`config.platform` dans `composer.json`) : un `composer update` ne fera pas entrer de paquet exigeant une version plus récente.
 
 ```bash
 cd pagnes-api
@@ -81,7 +81,16 @@ CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 | Vendeur | `yawovi` | `vente123` |
 | Vendeur | `essenam` | `vente123` |
 
-Ce sont des comptes de démonstration : ne les gardez pas en production.
+Ce sont des comptes de démonstration aux mots de passe publics : les seeders `DemoSeeder` et `ComptesSaasSeeder` refusent de tourner quand `APP_ENV=production`.
+
+## Mise en production
+
+1. **Configuration** : partir de `pagnes-api/.env.production.example` (copié en `.env`), pas de `.env.example`, qui sert au développement. `APP_DEBUG=false` est obligatoire ; en production l'API le force de toute façon à `false` et le signale dans le journal.
+2. **Base** : `php artisan migrate --force`, sans seeder. `php artisan db:seed` seul ne crée aucun compte.
+3. **Premier compte** : `php artisan plateforme:super-admin <identifiant>` crée le super administrateur ; le mot de passe (12 caractères au moins) est saisi au clavier, jamais en argument. La même commande le réinitialise.
+4. **Entreprises** : le super admin crée chaque entreprise avec le compte de son gérant, qui crée ensuite ses propres comptes (8 caractères au moins par mot de passe).
+5. **En-têtes de sécurité** : l'API les envoie elle-même (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, et HSTS en HTTPS). Le frontend est un site statique : configurez sur son serveur web au moins `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` et une CSP qui autorise l'adresse de l'API dans `connect-src` et `img-src` (photos des produits).
+6. **HTTPS** obligatoire pour l'API comme pour le frontend : le jeton de connexion circule dans chaque requête.
 
 ## Règles métier
 
@@ -111,14 +120,14 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 
 Authentification par jeton Sanctum : `POST /api/login` renvoie `{ user, token }`, à envoyer ensuite en `Authorization: Bearer <token>`. Les jetons expirent au bout de 12 h, la connexion est limitée à 5 tentatives par minute, et un compte désactivé perd ses jetons.
 
-Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher. Les listes `ventes` et `mouvements` sont paginées (`?page=`, `?per_page=`, 200 au plus). La recherche `?q=` des ventes porte sur le numéro (`V-00012` ou `12`), le client, le vendeur, l'article, le coloris et la référence de paiement. Les « jours » du tableau de bord suivent le fuseau `APP_TIMEZONE` (`Africa/Lome`, UTC+0).
+Les violations de règles métier renvoient `422 { "message": "..." }`, prêt à afficher. Les listes `ventes`, `mouvements` et `clients` sont paginées (`?page=`, `?per_page=`, 200 au plus) au format Laravel (`data`, `current_page`, `last_page`, `total`). Les listes de paiements (`/api/super-admin/payments`, `/api/tenant/payments`) gardent leur forme `{ totals, transactions }` et ajoutent `pagination`. La recherche `?q=` des ventes porte sur le numéro (`V-00012` ou `12`), le client, le vendeur, l'article, le coloris et la référence de paiement. Les « jours » du tableau de bord suivent le fuseau `APP_TIMEZONE` (`Africa/Lome`, UTC+0).
 
 | Domaine | Routes |
 |---|---|
 | Session | `POST /api/login`, `POST /api/logout`, `GET /api/me` |
 | Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image` |
 | Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
-| Clients | `GET`, `POST /api/clients`, `PUT /api/clients/{id}` ; admin : `DELETE /{id}`. La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
+| Clients | `GET` (paginé), `POST /api/clients`, `PUT /api/clients/{id}` ; admin : `DELETE /{id}`. La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
 | Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
 | Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
 | Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` |

@@ -91,9 +91,12 @@ class TenantPortalController extends Controller
         abort_unless($user && $user->tenant_id, 403, __('Aucun tenant associé à ce compte.'));
 
         $tenant = Tenant::findOrFail($user->tenant_id);
+        $page = $tenant->payments()->with('subscription.plan')->latest('created_at')->latest('id')
+            ->paginate(SuperAdminController::parPage($request));
 
         return response()->json([
-            'transactions' => $tenant->payments()->with('subscription.plan')->latest('created_at')->get()->map(function (Payment $payment) {
+            'pagination' => SuperAdminController::pagination($page),
+            'transactions' => $page->getCollection()->map(function (Payment $payment) {
                 return [
                     'id' => $payment->id,
                     'amount' => (int) $payment->amount,

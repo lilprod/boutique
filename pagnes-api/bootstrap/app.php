@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\DefinirLangue;
+use App\Http\Middleware\EnTetesSecurite;
 use App\Http\Middleware\EnsureActif;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureBoutiqueContext;
@@ -29,6 +30,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         // Avant l'authentification : même un refus de connexion revient dans la langue choisie.
         $middleware->api(prepend: [DefinirLangue::class]);
+        // Sur toutes les réponses, y compris les erreurs (401, 403, 422) et la page /up.
+        $middleware->append(EnTetesSecurite::class);
         // API pure : pas de page de connexion vers laquelle rediriger, un invité reçoit un 401 JSON.
         $middleware->redirectGuestsTo(fn () => null);
     })

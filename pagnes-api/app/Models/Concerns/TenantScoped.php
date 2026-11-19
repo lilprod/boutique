@@ -7,13 +7,15 @@ use Illuminate\Database\Eloquent\Builder;
 
 trait TenantScoped
 {
+    /**
+     * Sans utilisateur, la portée ne renvoie rien (jamais toutes les entreprises) : un appel oublié
+     * ou fait hors requête authentifiée échoue « à vide » au lieu d'exposer les données des autres.
+     * Les traitements qui portent volontairement sur toutes les boutiques (commandes planifiées)
+     * filtrent explicitement par tenant_id et boutique_id.
+     */
     public function scopeForCurrentTenant(Builder $query, ?User $user = null): Builder
     {
-        if (! $user) {
-            return $query;
-        }
-
-        if ($user->is_super_admin || empty($user->tenant_id)) {
+        if (! $user || $user->is_super_admin || empty($user->tenant_id)) {
             return $query->whereRaw('0 = 1');
         }
 
@@ -24,7 +26,7 @@ trait TenantScoped
     public function scopeForCurrentBoutique(Builder $query, ?User $user = null): Builder
     {
         if (! $user) {
-            return $query;
+            return $query->whereRaw('0 = 1');
         }
 
         if (! empty($user->boutique_id)) {

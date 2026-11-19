@@ -22,6 +22,11 @@ class ComptesSaasSeeder extends Seeder
 {
     public function run(): void
     {
+        // Comptes aux mots de passe publics (README) : jamais sur une base de production.
+        if (app()->isProduction()) {
+            throw new \RuntimeException('Données de démonstration refusées en production (APP_ENV=production).');
+        }
+
         $superAdmin = User::firstOrCreate(['email' => 'superadmin'], [
             'nom' => 'Équipe Plateforme', 'password' => Hash::make('super123'),
             'role' => 'super_admin', 'is_super_admin' => true, 'actif' => true,

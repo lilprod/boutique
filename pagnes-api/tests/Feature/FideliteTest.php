@@ -204,6 +204,6 @@ class FideliteTest extends TestCase
         $h = $this->getJson("/api/clients/{$this->client->id}/points")->assertOk()->json();
         $this->assertSame(300, $h['solde']);
         $this->assertSame('Geste commercial', $h['mouvements'][0]['motif']);
-        $this->assertSame(300, $this->getJson('/api/clients')->json('0.points'));
+        $this->assertSame(300, $this->getJson('/api/clients')->json('data.0.points'));
     }
 }

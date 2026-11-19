@@ -2,24 +2,17 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
+/**
+ * `php artisan db:seed` sans --class ne crée aucun compte : un compte au mot de passe connu
+ * n'a rien à faire sur une base réelle. Données de démo : --seeder="Database\Seeders\DemoSeeder"
+ * (refusé en production). Premier super administrateur : php artisan plateforme:super-admin.
+ */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $this->command?->info('Aucune donnée créée. Démo : --seeder="Database\\Seeders\\DemoSeeder" ; super admin : php artisan plateforme:super-admin');
     }
 }

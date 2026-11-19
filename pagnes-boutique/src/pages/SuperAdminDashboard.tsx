@@ -59,6 +59,7 @@ interface PaymentReport {
     paid_amount?: number;
   };
   transactions: PaymentSummary[];
+  pagination?: { current_page: number; last_page: number; total: number };
 }
 
 /* ---------- Présentation ---------- */
@@ -145,6 +146,22 @@ export default function SuperAdminDashboard() {
   const PAIEMENT_VIDE = { tenantId: '', planId: '', periodes: '1', amount: '', amountAuto: true, prolonger: true, method: 'cash', reference: '', status: 'paid', notes: '' };
   const [paymentForm, setPaymentForm] = useState(PAIEMENT_VIDE);
   const [paymentAttachment, setPaymentAttachment] = useState<File | null>(null);
+
+  /* Historique des paiements paginé : les pages suivantes s'ajoutent à la liste déjà affichée. */
+  const [loadingMorePayments, setLoadingMorePayments] = useState(false);
+  const morePayments = async () => {
+    const p = payments?.pagination;
+    if (!payments || !p || p.current_page >= p.last_page) return;
+    setLoadingMorePayments(true);
+    try {
+      const next = await get<PaymentReport>(`/super-admin/payments?page=${p.current_page + 1}`);
+      setPayments(prev => prev && { ...prev, transactions: [...prev.transactions, ...next.transactions], pagination: next.pagination });
+    } catch (e: any) {
+      setStatus({ type: 'err', msg: e?.message ?? t('sa.err.chargement') });
+    } finally {
+      setLoadingMorePayments(false);
+    }
+  };
 
   const reload = async () => {
     try {
@@ -651,9 +668,11 @@ export default function SuperAdminDashboard() {
             <section className="panel">
               <div className="panel-head">
                 <div><h2>{t('sa.histoPaiements')}</h2><p className="panel-sub">{t('sa.histoPaiementsSous')}</p></div>
-                <span className="badge info">{transactions.length}</span>
+                <span className="badge info">{payments?.pagination?.total ?? transactions.length}</span>
               </div>
               {transactions.length === 0 ? <Empty title={t('sa.aucunPaiement')} /> : paymentsTable(transactions)}
+              {payments?.pagination && payments.pagination.current_page < payments.pagination.last_page
+                && <div className="table-foot"><button className="btn btn-sm" type="button" disabled={loadingMorePayments} onClick={() => void morePayments()}>{t('common.voirPlus')}</button></div>}
             </section>
 
             <section className="panel sa-aside" id="form-payment">

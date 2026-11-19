@@ -52,7 +52,7 @@
     "Le SKU « :sku » est déjà utilisé par un autre coloris.": "SKU “:sku” is already used by another colourway.",
     "Le coloris « :coloris » a déjà été vendu : il ne peut pas être supprimé.": "Colourway “:coloris” has already been sold: it cannot be deleted.",
     "Le montant reçu est inférieur au total.": "The amount received is less than the total.",
-    "Le mot de passe doit contenir au moins 6 caractères.": "The password must be at least 6 characters long.",
+    "Le mot de passe doit contenir au moins 8 caractères.": "The password must be at least 8 characters long.",
     "Le mot de passe est obligatoire.": "Password is required.",
     "Le motif est obligatoire.": "A reason is required.",
     "Le motif « :motif » appartient déjà à :nom.": "Pattern “:motif” already belongs to :nom.",

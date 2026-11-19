@@ -682,7 +682,7 @@ class ApiTest extends TestCase
         Sanctum::actingAs($this->admin);
         $this->postJson("/api/ventes/{$annulee['id']}/annuler", ['motif' => 'x'])->assertOk();
 
-        $clients = collect($this->getJson('/api/clients')->assertOk()->json())->keyBy('nom');
+        $clients = collect($this->getJson('/api/clients')->assertOk()->json('data'))->keyBy('nom');
         $this->assertSame(1, $clients['Avec achats']['achats']);
         $this->assertSame(38000, $clients['Avec achats']['depense']);
         $this->assertNotNull($clients['Avec achats']['derniere_vente']);

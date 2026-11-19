@@ -2,6 +2,7 @@
 
 use App\Models\Client;
 use App\Models\Parametre;
+use App\Models\User;
 use App\Services\FideliteService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -32,3 +33,30 @@ Artisan::command('fidelite:expirer', function (FideliteService $fidelite) {
 })->purpose('Expire les points de fidélité des clients inactifs');
 
 Schedule::command('fidelite:expirer')->dailyAt('03:00');
+
+/**
+ * Crée (ou réinitialise) le compte super administrateur de la plateforme, avec un mot de passe
+ * saisi au clavier, jamais écrit dans le code ni dans l'historique du terminal.
+ */
+Artisan::command('plateforme:super-admin {identifiant} {--nom=Équipe Plateforme}', function (string $identifiant) {
+    $motDePasse = $this->secret('Mot de passe (12 caractères au moins)');
+    if (mb_strlen((string) $motDePasse) < 12) {
+        $this->error('Mot de passe trop court : 12 caractères au moins.');
+
+        return 1;
+    }
+    if ($this->secret('Confirmez le mot de passe') !== $motDePasse) {
+        $this->error('Les deux saisies diffèrent.');
+
+        return 1;
+    }
+
+    $user = User::updateOrCreate(['email' => $identifiant], [
+        'nom' => $this->option('nom'), 'password' => $motDePasse, 'role' => 'super_admin',
+        'actif' => true, 'is_super_admin' => true, 'tenant_id' => null, 'boutique_id' => null,
+    ]);
+    $user->tokens()->delete();
+    $this->info("Super administrateur « {$identifiant} » prêt.");
+
+    return 0;
+})->purpose('Crée ou réinitialise le compte super administrateur');

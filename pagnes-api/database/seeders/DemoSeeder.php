@@ -25,6 +25,11 @@ class DemoSeeder extends Seeder
 {
     public function run(): void
     {
+        // Comptes aux mots de passe publics (README) : jamais sur une base de production.
+        if (app()->isProduction()) {
+            throw new \RuntimeException('Données de démonstration refusées en production (APP_ENV=production).');
+        }
+
         if (User::where('email', 'admin')->exists()) {
             $this->command?->warn('Données de démo déjà présentes : seuls les comptes SaaS manquants sont ajoutés (migrate:fresh --seed pour repartir de zéro).');
             $this->call(ComptesSaasSeeder::class);

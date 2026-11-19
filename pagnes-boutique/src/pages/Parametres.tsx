@@ -252,7 +252,7 @@ function UserForm({ user, onClose }: { user?: User; onClose: () => void }) {
         <Field label={t('param.nom')}><input className="input" value={u.nom} onChange={e => setU({ ...u, nom: e.target.value })} required /></Field>
         <Field label={t('login.identifiant')}><input className="input" value={u.identifiant} onChange={e => setU({ ...u, identifiant: e.target.value })} required /></Field>
         <Field label={t('login.motDePasse')} hint={user ? t('param.mdpGarder') : t('param.mdpMin')}>
-          <input className="input" type="password" autoComplete="new-password" minLength={6} value={u.motDePasse} onChange={e => setU({ ...u, motDePasse: e.target.value })} required={!user} />
+          <input className="input" type="password" autoComplete="new-password" minLength={8} value={u.motDePasse} onChange={e => setU({ ...u, motDePasse: e.target.value })} required={!user} />
         </Field>
         <Field label={t('param.role')}>
           <select className="select" value={u.role} onChange={e => setU({ ...u, role: e.target.value as Role })}>

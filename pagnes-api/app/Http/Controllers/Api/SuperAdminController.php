@@ -280,9 +280,11 @@ class SuperAdminController extends Controller
     public function payments(Request $request): JsonResponse
     {
         $query = $this->filteredPayments($request);
-        $transactions = (clone $query)->with(['tenant', 'subscription.plan'])
-            ->latest('created_at')
-            ->get()
+        // Une page à la fois (50 par défaut, 200 au plus) : l'historique grossit à chaque encaissement.
+        $page = (clone $query)->with(['tenant', 'subscription.plan'])
+            ->latest('created_at')->latest('id')
+            ->paginate(self::parPage($request));
+        $transactions = $page->getCollection()
             ->map(function (Payment $payment) {
                 return [
                     'id' => $payment->id,
@@ -320,7 +322,25 @@ class SuperAdminController extends Controller
                 'paid_amount' => (int) (clone $totalsQuery)->where('status', 'paid')->sum('amount'),
             ],
             'transactions' => $transactions,
+            'pagination' => self::pagination($page),
         ]);
+    }
+
+    /** Taille de page demandée (`per_page`), bornée entre 1 et 200. */
+    public static function parPage(Request $request, int $defaut = 50): int
+    {
+        return max(1, min(200, $request->integer('per_page', $defaut)));
+    }
+
+    /** Position dans la liste paginée, à côté des lignes (la forme { totals, transactions } reste la même). */
+    public static function pagination(\Illuminate\Contracts\Pagination\LengthAwarePaginator $page): array
+    {
+        return [
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'per_page' => $page->perPage(),
+            'total' => $page->total(),
+        ];
     }
 
     public function exportPayments(Request $request): StreamedResponse

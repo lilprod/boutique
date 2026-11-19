@@ -20,10 +20,14 @@ class ClientController extends Controller
             ->withCount(['ventes as achats' => fn ($q) => $q->where('statut', 'validee')])
             ->withSum(['ventes as depense' => fn ($q) => $q->where('statut', 'validee')], 'total')
             ->withMax(['ventes as derniere_vente' => fn ($q) => $q->where('statut', 'validee')], 'created_at')
-            ->orderBy('nom')->get()
-            ->each(function (Client $c) {
+            ->orderBy('nom')->orderBy('id')
+            // Paginé (100 par défaut, 200 au plus) : le fichier clients grossit avec l'activité.
+            ->paginate(max(1, min(200, $request->integer('per_page', 100))))
+            ->through(function (Client $c) {
                 $c->depense = (int) $c->depense;
                 $c->derniere_vente = $c->derniere_vente ? Carbon::parse($c->derniere_vente)->toIso8601String() : null;
+
+                return $c;
             });
     }
 

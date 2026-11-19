@@ -120,7 +120,7 @@ const fr: Record<string, string> = {
   'prop.tickets': '{n} ticket(s)', 'prop.marge': 'Marge', 'prop.vendu': 'Vendu', 'prop.enStock': 'En stock', 'prop.valeurStock': 'Valeur du stock (au prix d’achat)',
   'prop.ruptures': '{n} rupture(s)', 'prop.coloris': '{n} coloris', 'prop.total': 'Total encaissé sur la période',
   'prop.desactive': 'L’option « Plusieurs propriétaires du stock » est désactivée pour cette boutique.', 'prop.activer': 'L’activer dans les paramètres',
-  'param.mdpMin': '6 caractères minimum.', 'param.mdpGarder': 'Laisser vide pour conserver le mot de passe actuel.',
+  'param.mdpMin': '8 caractères minimum.', 'param.mdpGarder': 'Laisser vide pour conserver le mot de passe actuel.',
   'app.chargement': 'Chargement…',
 
   // Erreurs
@@ -160,7 +160,7 @@ const fr: Record<string, string> = {
   'promo.des': 'dès {n}', 'promo.parUnite': '/ {unite}', 'promo.depuis': 'depuis le {d}', 'promo.jusqua': 'jusqu’au {d}', 'promo.duAu': 'du {d} au {f}', 'promo.sansDate': 'Sans limite de date', 'err.uniteAutorisee': 'Autorisez au moins une unité de vente.',
   'err.remiseMax': 'Remise trop élevée : au-delà de {max} %, un administrateur est requis.', 'err.reference': 'La référence de la transaction est obligatoire pour le mobile money.',
   'err.recuInsuffisant': 'Le montant reçu est inférieur au total.', 'err.dejaAnnulee': 'Cette vente est déjà annulée.', 'err.nomClient': 'Le nom du client est obligatoire.',
-  'err.inattendue': 'Une erreur inattendue est survenue. Réessayez.', 'err.mdpCourt': 'Le mot de passe doit contenir au moins 6 caractères.',
+  'err.inattendue': 'Une erreur inattendue est survenue. Réessayez.', 'err.mdpCourt': 'Le mot de passe doit contenir au moins 8 caractères.',
   'err.champsUtilisateur': 'Nom, identifiant et mot de passe sont obligatoires.', 'err.identifiantPris': 'Cet identifiant est déjà utilisé.', 'err.dernierAdmin': 'Il doit toujours rester un administrateur actif.',
 
   // Ajouts de présentation (refonte visuelle)
@@ -387,7 +387,7 @@ const en: Record<string, string> = {
   'prop.tickets': '{n} receipt(s)', 'prop.marge': 'Margin', 'prop.vendu': 'Sold', 'prop.enStock': 'In stock', 'prop.valeurStock': 'Stock value (at cost)',
   'prop.ruptures': '{n} out of stock', 'prop.coloris': '{n} colourways', 'prop.total': 'Total collected for the period',
   'prop.desactive': 'The “Several stock owners” option is turned off for this shop.', 'prop.activer': 'Turn it on in Settings',
-  'param.mdpMin': 'At least 6 characters.', 'param.mdpGarder': 'Leave blank to keep the current password.',
+  'param.mdpMin': 'At least 8 characters.', 'param.mdpGarder': 'Leave blank to keep the current password.',
   'app.chargement': 'Loading…',
 
   // Errors
@@ -427,7 +427,7 @@ const en: Record<string, string> = {
   'promo.des': 'from {n}', 'promo.parUnite': '/ {unite}', 'promo.depuis': 'since {d}', 'promo.jusqua': 'until {d}', 'promo.duAu': 'from {d} to {f}', 'promo.sansDate': 'No end date', 'err.uniteAutorisee': 'Allow at least one sales unit.',
   'err.remiseMax': 'Discount too high: above {max} %, an administrator is required.', 'err.reference': 'A transaction reference is required for mobile money.',
   'err.recuInsuffisant': 'The amount received is less than the total.', 'err.dejaAnnulee': 'This sale has already been cancelled.', 'err.nomClient': 'Customer name is required.',
-  'err.inattendue': 'An unexpected error occurred. Please try again.', 'err.mdpCourt': 'The password must be at least 6 characters long.',
+  'err.inattendue': 'An unexpected error occurred. Please try again.', 'err.mdpCourt': 'The password must be at least 8 characters long.',
   'err.champsUtilisateur': 'Name, username and password are required.', 'err.identifiantPris': 'This username is already taken.', 'err.dernierAdmin': 'There must always be at least one active administrator.',
 
   // Design additions
