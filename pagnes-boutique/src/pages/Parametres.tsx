@@ -230,8 +230,10 @@ function ProprietaireForm({ proprietaire, onClose }: { proprietaire?: Proprietai
 }
 
 function UserForm({ user, onClose }: { user?: User; onClose: () => void }) {
-  const { saveUser } = useApp();
+  const { saveUser, user: moi } = useApp();
   const { toast } = useUI();
+  // Seul le gérant peut nommer un gérant ; la fiche d'un gérant garde son rôle affiché.
+  const roleGerantPossible = moi?.role === 'tenant_admin' || user?.role === 'tenant_admin';
   const [u, setU] = useState<User>(user ?? { id: uid('u_'), nom: '', identifiant: '', motDePasse: '', role: 'vendeur', actif: true });
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
@@ -257,6 +259,7 @@ function UserForm({ user, onClose }: { user?: User; onClose: () => void }) {
             <option value="vendeur">{t('role.vendeur')}</option>
             <option value="admin">{t('role.admin')}</option>
             <option value="boutique_admin">{t('role.boutique_admin')}</option>
+            {roleGerantPossible && <option value="tenant_admin">{t('role.tenant_admin')}</option>}
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={u.actif} onChange={e => setU({ ...u, actif: e.target.checked })} /> {t('param.compteActif')}</label>

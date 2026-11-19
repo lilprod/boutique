@@ -89,5 +89,10 @@
     "mètre": "metre",
     "The given data was invalid.": "The given data was invalid.",
     "(and :count more error)": "(and :count more error)",
-    "(and :count more errors)": "(and :count more errors)"
+    "(and :count more errors)": "(and :count more errors)",
+    "Cet espace est réservé au gérant de l'entreprise.": "This area is restricted to the company manager.",
+    "Vous ne pouvez pas attribuer un rôle supérieur au vôtre.": "You cannot assign a role higher than your own.",
+    "Limite de comptes actifs atteinte pour votre offre. Désactivez un compte ou changez d'offre.": "Your plan's active account limit has been reached. Deactivate an account or change plan.",
+    "Le compte gérant doit être rattaché à une boutique : indiquez son nom.": "The manager account must belong to a shop: enter its name.",
+    "Le mot de passe du gérant doit contenir au moins 8 caractères.": "The manager's password must be at least 8 characters long."
 }

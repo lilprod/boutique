@@ -21,7 +21,8 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
-    Route::middleware('tenant_active')->prefix('tenant')->group(function () {
+    // Espace entreprise : gérant uniquement (paiements, factures, clé de licence).
+    Route::middleware(['tenant_admin', 'tenant_active'])->prefix('tenant')->group(function () {
         Route::get('/plans', [TenantPortalController::class, 'plans']);
         Route::get('/dashboard', [TenantPortalController::class, 'dashboard']);
         Route::get('/notifications', [TenantPortalController::class, 'notifications']);

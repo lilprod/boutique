@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureActif;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\EnsureBoutiqueContext;
 use App\Http\Middleware\EnsureSuperAdmin;
+use App\Http\Middleware\EnsureTenantAdmin;
 use App\Http\Middleware\EnsureTenantActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'actif' => EnsureActif::class,
             'super_admin' => EnsureSuperAdmin::class,
             'tenant_active' => EnsureTenantActive::class,
+            'tenant_admin' => EnsureTenantAdmin::class,
         ]);
         // Avant l'authentification : même un refus de connexion revient dans la langue choisie.
         $middleware->api(prepend: [DefinirLangue::class]);

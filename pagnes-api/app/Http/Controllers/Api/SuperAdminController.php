@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\LicenceService;
 use App\Services\NotificationService;
 use Illuminate\Database\Eloquent\Builder;
@@ -75,44 +76,70 @@ class SuperAdminController extends Controller
         ]);
     }
 
+    /**
+     * Crée l'entreprise, sa première boutique et, si demandé, le compte de son gérant.
+     * Le compte super admin n'est jamais rattaché à l'entreprise créée.
+     */
     public function storeTenant(Request $request)
     {
         $data = $request->validate([
             'nom' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:120', 'unique:tenants,slug'],
             'boutique' => ['nullable', 'array'],
-            'boutique.nom' => ['nullable', 'string', 'max:255'],
+            'boutique.nom' => ['nullable', 'required_with:gerant', 'string', 'max:255'],
             'boutique.adresse' => ['nullable', 'string', 'max:255'],
             'boutique.telephone' => ['nullable', 'string', 'max:50'],
+            'gerant' => ['nullable', 'array'],
+            'gerant.nom' => ['required_with:gerant', 'string', 'max:150'],
+            'gerant.identifiant' => ['required_with:gerant', 'string', 'max:150', 'unique:users,email'],
+            'gerant.mot_de_passe' => ['required_with:gerant', 'string', 'min:8'],
+        ], [
+            'boutique.nom.required_with' => __('Le compte gérant doit être rattaché à une boutique : indiquez son nom.'),
+            'gerant.identifiant.unique' => __('Cet identifiant est déjà utilisé.'),
+            'gerant.mot_de_passe.min' => __('Le mot de passe du gérant doit contenir au moins 8 caractères.'),
         ]);
 
-        $tenant = Tenant::create([
-            'nom' => $data['nom'],
-            'slug' => $data['slug'],
-            'statut' => 'active',
-        ]);
-
-        $boutique = null;
-        if (! empty($data['boutique']['nom'])) {
-            $boutique = Boutique::create([
-                'tenant_id' => $tenant->id,
-                'nom' => $data['boutique']['nom'],
-                'adresse' => $data['boutique']['adresse'] ?? null,
-                'telephone' => $data['boutique']['telephone'] ?? null,
-                'devise' => 'XOF',
-                'timezone' => 'Africa/Lome',
+        [$tenant, $boutique, $gerant] = DB::transaction(function () use ($data) {
+            $tenant = Tenant::create([
+                'nom' => $data['nom'],
+                'slug' => $data['slug'],
                 'statut' => 'active',
             ]);
 
-            $request->user()->update([
-                'tenant_id' => $tenant->id,
-                'boutique_id' => $boutique->id,
-            ]);
-        }
+            $boutique = null;
+            if (! empty($data['boutique']['nom'])) {
+                $boutique = Boutique::create([
+                    'tenant_id' => $tenant->id,
+                    'nom' => $data['boutique']['nom'],
+                    'adresse' => $data['boutique']['adresse'] ?? null,
+                    'telephone' => $data['boutique']['telephone'] ?? null,
+                    'devise' => 'XOF',
+                    'timezone' => 'Africa/Lome',
+                    'statut' => 'active',
+                ]);
+            }
+
+            $gerant = null;
+            if (! empty($data['gerant'])) {
+                $gerant = User::create([
+                    'nom' => $data['gerant']['nom'],
+                    'email' => $data['gerant']['identifiant'],
+                    'password' => $data['gerant']['mot_de_passe'], // haché par le cast `hashed`
+                    'role' => 'tenant_admin',
+                    'actif' => true,
+                    'is_super_admin' => false,
+                    'tenant_id' => $tenant->id,
+                    'boutique_id' => $boutique->id,
+                ]);
+            }
+
+            return [$tenant, $boutique, $gerant];
+        });
 
         return response()->json([
             'tenant' => $tenant->load('boutiques'),
             'boutique' => $boutique,
+            'gerant' => $gerant?->only(['id', 'nom', 'email', 'role']),
         ]);
     }
 
@@ -173,38 +200,55 @@ class SuperAdminController extends Controller
         $plan = Plan::findOrFail($data['plan_id']);
         $paymentMethod = $data['payment_method'] ?? $data['billing_provider'] ?? 'manual';
         $paymentReference = $data['payment_reference'] ?? $data['external_reference'] ?? null;
+        $status = $data['status'] ?? 'active';
 
-        $subscription = Subscription::updateOrCreate(
-            ['tenant_id' => $tenant->id],
-            [
-                'plan_id' => $plan->id,
-                'status' => $data['status'] ?? 'active',
-                'starts_at' => now(),
-                'ends_at' => $plan->intervalle === 'year' ? now()->addYear() : now()->addMonth(),
-                'trial_ends_at' => now()->addDays(14),
-                'billing_provider' => $paymentMethod,
-                'external_reference' => $paymentReference,
-            ]
-        );
+        // Dates cohérentes avec le statut : un essai dure 14 jours, un abonnement une période de
+        // son offre (mois ou année), un abonnement expiré ou annulé se termine maintenant.
+        $debut = now();
+        $fin = match ($status) {
+            'trial' => $debut->copy()->addDays(14),
+            'active' => $plan->intervalle === 'year' ? $debut->copy()->addYearNoOverflow() : $debut->copy()->addMonthNoOverflow(),
+            default => $debut->copy(),
+        };
+        $statutLicence = match ($status) {
+            'active', 'trial' => 'active',
+            'expired' => 'expired',
+            default => 'suspended',
+        };
 
-        $license = License::firstOrCreate(
-            ['tenant_id' => $tenant->id],
-            [
-                'subscription_id' => $subscription->id,
-                'status' => 'active',
-                'cle' => strtoupper(Str::random(16)),
-                'activated_at' => now(),
-                'expires_at' => now()->addMonth(),
-                'quota_usage' => [
-                    'boutiques' => 0,
-                    'utilisateurs' => 0,
-                ],
-            ]
-        );
+        [$subscription, $license] = DB::transaction(function () use ($tenant, $plan, $status, $debut, $fin, $statutLicence, $paymentMethod, $paymentReference) {
+            $subscription = Subscription::updateOrCreate(
+                ['tenant_id' => $tenant->id],
+                [
+                    'plan_id' => $plan->id,
+                    'status' => $status,
+                    'starts_at' => $debut,
+                    'ends_at' => $fin,
+                    'trial_ends_at' => $status === 'trial' ? $fin : null,
+                    'billing_provider' => $paymentMethod,
+                    'external_reference' => $paymentReference,
+                ]
+            );
+
+            // La licence suit toujours l'abonnement : même échéance, existante prolongée plutôt qu'ignorée.
+            $license = $tenant->licenses()->latest('id')->lockForUpdate()->first();
+            $valeurs = ['subscription_id' => $subscription->id, 'status' => $statutLicence, 'expires_at' => $fin];
+            if ($license) {
+                $license->update($valeurs + ['activated_at' => $license->activated_at ?? $debut]);
+            } else {
+                $license = $tenant->licenses()->create($valeurs + [
+                    'cle' => strtoupper(Str::random(16)),
+                    'activated_at' => $debut,
+                    'quota_usage' => ['boutiques' => 0, 'utilisateurs' => 0],
+                ]);
+            }
+
+            return [$subscription, $license];
+        });
 
         return response()->json([
             'subscription' => $subscription->load('plan'),
-            'license' => $license,
+            'license' => $license->fresh(),
         ]);
     }
 
@@ -395,9 +439,10 @@ class SuperAdminController extends Controller
             throw $exception;
         }
 
+        // Paiement seulement enregistré : il ne change ni le statut ni les dates de l'abonnement.
+        // Pour qu'un paiement prolonge l'abonnement et la licence, passer par /renouvellements.
         if ($subscription && $data['status'] === 'paid') {
             $subscription->update([
-                'status' => 'active',
                 'billing_provider' => $data['payment_method'],
                 'external_reference' => $data['payment_reference'],
             ]);

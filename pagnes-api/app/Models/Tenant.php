@@ -40,13 +40,18 @@ class Tenant extends Model
         return $this->hasMany(Payment::class);
     }
 
+    /**
+     * Abonnement en cours. Un abonnement actif sans date de fin reste valable ; un essai,
+     * jamais : il lui faut une fin d'essai (ou à défaut une fin d'abonnement) encore à venir.
+     */
     public function activeSubscription(): ?Subscription
     {
         return $this->subscriptions()
-            ->whereIn('status', ['active', 'trial'])
             ->where(function ($query) {
-                $query->whereNull('ends_at')
-                    ->orWhere('ends_at', '>=', now());
+                $query->where(fn ($q) => $q->where('status', 'active')
+                    ->where(fn ($d) => $d->whereNull('ends_at')->orWhere('ends_at', '>=', now())))
+                    ->orWhere(fn ($q) => $q->where('status', 'trial')
+                        ->whereRaw('COALESCE(trial_ends_at, ends_at) >= ?', [now()]));
             })
             ->latest('starts_at')
             ->first();
@@ -64,13 +69,26 @@ class Tenant extends Model
             ->first();
     }
 
+    /**
+     * Accès ouvert ? Une licence suspendue par le super admin coupe l'accès. Dès qu'un abonnement
+     * existe, c'est lui qui décide (un abonnement annulé ou expiré ferme l'accès même si la licence
+     * court encore) ; la licence seule ne sert que pour un compte sans aucun abonnement.
+     */
     public function isActive(): bool
     {
         if ($this->statut !== 'active') {
             return false;
         }
 
-        return $this->activeSubscription() !== null || $this->activeLicense() !== null;
+        if ($this->licenses()->latest('id')->value('status') === 'suspended') {
+            return false;
+        }
+
+        if ($this->subscriptions()->exists()) {
+            return $this->activeSubscription() !== null;
+        }
+
+        return $this->activeLicense() !== null;
     }
 
     public function hasFeature(string $feature): bool
@@ -100,13 +118,18 @@ class Tenant extends Model
 
     public function canAddUser(): bool
     {
+        // Une offre retirée du catalogue (plan inactif) reste valable pour qui l'a déjà souscrite.
         $subscription = $this->activeSubscription();
-        if (! $subscription || ! $subscription->plan || ! $subscription->plan->actif) {
+        if (! $subscription || ! $subscription->plan) {
             return false;
+        }
+        if ($subscription->plan->max_utilisateurs === null) {
+            return true;
         }
 
         $maxUtilisateurs = (int) $subscription->plan->max_utilisateurs;
-        $current = $this->users()->count();
+        // Seuls les comptes actifs occupent une place : désactiver un compte la libère.
+        $current = $this->users()->where('actif', true)->count();
 
         return $current < $maxUtilisateurs;
     }

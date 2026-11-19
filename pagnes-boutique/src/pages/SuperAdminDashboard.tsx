@@ -140,7 +140,7 @@ export default function SuperAdminDashboard() {
     nom: '', slug: '', prix: '0', intervalle: 'month', max_boutiques: '1', max_utilisateurs: '5', features: 'stock,ventes,users', actif: true,
   });
   const [tenantForm, setTenantForm] = useState({
-    nom: '', slug: '', boutiqueNom: '', boutiqueAdresse: '', boutiqueTelephone: '', planId: '', paymentMethod: 'cash', paymentReference: '',
+    nom: '', slug: '', boutiqueNom: '', boutiqueAdresse: '', boutiqueTelephone: '', planId: '', paymentMethod: 'cash', paymentReference: '', gerantNom: '', gerantIdentifiant: '', gerantMotDePasse: '',
   });
   const PAIEMENT_VIDE = { tenantId: '', planId: '', periodes: '1', amount: '', amountAuto: true, prolonger: true, method: 'cash', reference: '', status: 'paid', notes: '' };
   const [paymentForm, setPaymentForm] = useState(PAIEMENT_VIDE);
@@ -199,6 +199,14 @@ export default function SuperAdminDashboard() {
           adresse: tenantForm.boutiqueAdresse.trim() || null,
           telephone: tenantForm.boutiqueTelephone.trim() || null,
         },
+        // Compte du gérant (facultatif) : c'est lui qui se connecte à l'espace de l'entreprise.
+        ...(tenantForm.gerantIdentifiant.trim() ? {
+          gerant: {
+            nom: tenantForm.gerantNom.trim(),
+            identifiant: tenantForm.gerantIdentifiant.trim(),
+            mot_de_passe: tenantForm.gerantMotDePasse,
+          },
+        } : {}),
       });
 
       if (tenantForm.planId && tenant?.tenant?.id) {
@@ -211,7 +219,7 @@ export default function SuperAdminDashboard() {
       }
 
       setStatus({ type: 'ok', msg: t('sa.ok.entreprise') });
-      setTenantForm({ nom: '', slug: '', boutiqueNom: '', boutiqueAdresse: '', boutiqueTelephone: '', planId: '', paymentMethod: 'cash', paymentReference: '' });
+      setTenantForm({ nom: '', slug: '', boutiqueNom: '', boutiqueAdresse: '', boutiqueTelephone: '', planId: '', paymentMethod: 'cash', paymentReference: '', gerantNom: '', gerantIdentifiant: '', gerantMotDePasse: '' });
       await reload();
     } catch (e: any) {
       setStatus({ type: 'err', msg: e?.message ?? t('sa.err.entreprise') });
@@ -585,6 +593,12 @@ export default function SuperAdminDashboard() {
                     <div className="field"><label className="field-label" htmlFor="tn-tel">{t('clients.telephone')}</label><input id="tn-tel" className="input" inputMode="tel" value={tenantForm.boutiqueTelephone} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueTelephone: e.target.value })} placeholder="+228 90 00 00 00" /></div>
                   </div>
                   <div className="field"><label className="field-label" htmlFor="tn-adr">{t('clients.adresse')}</label><input id="tn-adr" className="input" value={tenantForm.boutiqueAdresse} onChange={(e) => setTenantForm({ ...tenantForm, boutiqueAdresse: e.target.value })} placeholder={t('sa.f.adresseEx')} /></div>
+                  <p className="hint">{t('sa.f.gerantHint')}</p>
+                  <div className="row-2">
+                    <div className="field"><label className="field-label" htmlFor="tn-gn">{t('sa.f.gerantNom')}</label><input id="tn-gn" className="input" value={tenantForm.gerantNom} onChange={(e) => setTenantForm({ ...tenantForm, gerantNom: e.target.value })} required={!!tenantForm.gerantIdentifiant.trim()} /></div>
+                    <div className="field"><label className="field-label" htmlFor="tn-gi">{t('login.identifiant')}</label><input id="tn-gi" className="input" autoComplete="off" value={tenantForm.gerantIdentifiant} onChange={(e) => setTenantForm({ ...tenantForm, gerantIdentifiant: e.target.value })} /></div>
+                  </div>
+                  <div className="field"><label className="field-label" htmlFor="tn-gp">{t('login.motDePasse')}</label><input id="tn-gp" className="input" type="password" autoComplete="new-password" minLength={8} value={tenantForm.gerantMotDePasse} onChange={(e) => setTenantForm({ ...tenantForm, gerantMotDePasse: e.target.value })} required={!!tenantForm.gerantIdentifiant.trim()} /><span className="hint">{t('sa.f.gerantMdpHint')}</span></div>
                 </fieldset>
                 <fieldset className="step">
                   <legend><span className="step-n">3</span> {t('sa.f.abonnementInitial')}</legend>
