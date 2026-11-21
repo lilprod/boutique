@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ParametreController;
 use App\Http\Controllers\Api\ProduitController;
 use App\Http\Controllers\Api\PromotionController;
+use App\Http\Controllers\Api\RapportController;
 use App\Http\Controllers\Api\ProprietaireController;
 use App\Http\Controllers\Api\StatistiqueController;
 use App\Http\Controllers\Api\SuperAdminController;
@@ -98,6 +99,13 @@ Route::middleware(['auth:sanctum', 'actif', 'choisir_boutique'])->group(function
             Route::put('parametres', [ParametreController::class, 'update']);
             Route::apiResource('proprietaires', ProprietaireController::class)->only(['store', 'update', 'destroy']);
             Route::get('rapports/proprietaires', [ProprietaireController::class, 'rapport']);
+            // Rapports et exports CSV de la période (?du=&au=, par défaut le mois en cours).
+            Route::get('rapports/ventes', [RapportController::class, 'ventes']);
+            Route::get('exports/ventes.csv', [RapportController::class, 'exportVentes']);
+            Route::get('exports/lignes.csv', [RapportController::class, 'exportLignes']);
+            Route::get('exports/mouvements.csv', [RapportController::class, 'exportMouvements']);
+            Route::get('exports/stock.csv', [RapportController::class, 'exportStock']);
+            Route::get('exports/proprietaires.csv', [RapportController::class, 'exportProprietaires']);
             Route::apiResource('promotions', PromotionController::class)->only(['store', 'update', 'destroy']);
             Route::apiResource('users', UserController::class)->only(['index', 'store', 'update']);
         });

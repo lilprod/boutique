@@ -33,6 +33,11 @@ class Mouvement extends Model
         return $this->belongsTo(Variante::class);
     }
 
+    public function vente(): BelongsTo
+    {
+        return $this->belongsTo(Vente::class);
+    }
+
     public function utilisateur(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');

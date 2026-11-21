@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LuBuilding2, LuHandCoins, LuTag, LuChevronsLeft, LuChevronsRight, LuGauge, LuLayers, LuLayoutDashboard, LuPackage, LuReceipt, LuSettings, LuShoppingCart, LuUsers, LuWallet } from 'react-icons/lu';
+import { LuBuilding2, LuChartColumn, LuHandCoins, LuTag, LuChevronsLeft, LuChevronsRight, LuGauge, LuLayers, LuLayoutDashboard, LuPackage, LuReceipt, LuSettings, LuShoppingCart, LuUsers, LuWallet } from 'react-icons/lu';
 import { AppProvider, useApp } from './store';
 import { UIProvider } from './components/ui';
 import { TopBar } from './components/TopBar';
@@ -16,6 +16,7 @@ import Clients from './pages/Clients';
 import Parametres from './pages/Parametres';
 import Proprietaires from './pages/Proprietaires';
 import Promotions from './pages/Promotions';
+import Rapports from './pages/Rapports';
 import TenantPortal from './pages/TenantPortal';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/ventes', key: 'nav.ventes', icon: <LuReceipt />, admin: false },
   { to: '/clients', key: 'nav.clients', icon: <LuUsers />, admin: false },
   { to: '/promotions', key: 'nav.promotions', icon: <LuTag />, admin: true },
+  { to: '/rapports', key: 'nav.rapports', icon: <LuChartColumn />, admin: true },
   { to: '/proprietaires', key: 'nav.proprietaires', icon: <LuHandCoins />, admin: true, multi: true },
   { to: '/parametres', key: 'nav.parametres', icon: <LuSettings />, admin: true },
 ];
@@ -54,6 +56,7 @@ function Layout() {
       case '/parametres': return <Parametres />;
       case '/proprietaires': return <Proprietaires />;
       case '/promotions': return <Promotions />;
+      case '/rapports': return <Rapports />;
       default: return <Dashboard />;
     }
   };

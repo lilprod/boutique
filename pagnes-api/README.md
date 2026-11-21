@@ -20,7 +20,8 @@ php artisan test                # base MySQL `pagnes_test`, voir phpunit.xml
 | Dossier | Contenu |
 |---|---|
 | `app/Services/` | Règles métier : `VenteService` (caisse, remises, promotions, points), `StockService`, `ProduitService`, `FideliteService`, `ProprietaireService`, `LicenceService` (renouvellements), `NotificationService` |
-| `app/Http/Controllers/Api/` | Contrôleurs REST : ils valident la requête puis appellent un service |
+| `app/Http/Controllers/Api/` | Contrôleurs REST : ils valident la requête puis appellent un service ; `RapportController` : rapports et exports CSV |
+| `app/Support/Csv.php` | Exports CSV pour Excel en français (`;`, virgule décimale, formules neutralisées) |
 | `app/Http/Middleware/` | `EnsureAdmin`, `EnsureTenantAdmin` (gérant), `EnsureSuperAdmin`, `EnsureTenantActive` (abonnement valable), `EnsureBoutiqueContext`, `ChoisirBoutique` (boutique ouverte par le gérant, `X-Boutique`), `EnsureActif`, `DefinirLangue` (`X-Langue`), `EnTetesSecurite` |
 | `app/Models/Concerns/TenantScoped.php` | Filtres par entreprise et par boutique ; sans utilisateur, ils ne renvoient rien |
 | `routes/api.php` | Routes et droits de chaque espace (boutique, entreprise, super admin) |

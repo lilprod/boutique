@@ -86,7 +86,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 145 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 150 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -145,6 +145,15 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 - **Historique** : chaque entrée, vente, annulation et ajustement est journalisé. Un produit déjà vendu ne peut pas être supprimé.
 - **Historique des prix** : chaque création de produit et chaque changement de prix (fiche produit, ou prix d'achat saisi lors d'une entrée de stock) est gardé avec sa date et son auteur. L'administrateur le consulte dans la fiche produit.
 - **Stock jamais négatif** : contrôlé par l'application et garanti par une contrainte en base (`CHECK (stock >= 0)`, MySQL 8.0.16+ ou MariaDB 10.2+).
+
+### Rapports et exports
+
+La page **Rapports** (administrateur) couvre une période au choix : 7 derniers jours, ce mois, le mois dernier, ou des dates personnalisées.
+- **Indicateurs** : chiffre d'affaires, nombre de ventes (et d'annulées), panier moyen, marge, remises accordées.
+- **Détail** : chiffre d'affaires par jour, par moyen de paiement, par vendeur, et meilleurs produits (net encaissé et marge).
+- **Exports CSV** pour Excel ou le comptable : ventes, lignes de vente, mouvements de stock, stock actuel, et propriétaires si l'option est active.
+  - Format : séparateur `;`, décimales avec virgule, en-têtes dans la langue choisie.
+  - Une valeur qui ressemble à une formule (`=`, `+`, `-`, `@`) est neutralisée.
 
 ### Caisse hors ligne
 
@@ -222,6 +231,7 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 | Propriétaires | `GET /api/proprietaires` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /api/rapports/proprietaires` (`?du=`, `?au=`) |
 | Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
 | Notifications | `GET /api/notifications` : ruptures, stock bas et, pour l'admin, licence qui expire |
+| Rapports | admin : `GET /api/rapports/ventes`, `GET /api/rapports/proprietaires` ; exports CSV `GET /api/exports/ventes.csv`, `lignes.csv`, `mouvements.csv`, `proprietaires.csv` (période `?du=&au=`, par défaut le mois en cours) et `stock.csv` (état du jour) |
 | Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` (nom, adresse et téléphone sont aussi ceux de la boutique dans l'espace entreprise) |
 | Utilisateurs | admin : `GET`, `POST /api/users`, `PUT /api/users/{id}` |
 
@@ -267,7 +277,7 @@ Les justificatifs de paiement (PDF, JPEG, PNG, 10 Mo au plus) sont rangés hors 
 ```
 pagnes-boutique/                frontend
   src/pages/                    Connexion, Tableau de bord, Caisse, Stock, Ventes, Clients, Promotions,
-                                Propriétaires, Paramètres, Espace entreprise, Console super admin
+                                Propriétaires, Rapports, Paramètres, Espace entreprise, Console super admin
   src/api.ts                    client HTTP : jeton Bearer, langue, erreurs, chargement paginé
   src/lib/mappers.ts            conversion API (snake_case, ids numériques) <-> types du frontend
   src/lib/calc.ts               calculs de la caisse (remises, promotions, points), miroir du serveur
@@ -292,4 +302,4 @@ pagnes-api/                     API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+1. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels.

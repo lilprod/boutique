@@ -57,7 +57,7 @@ src/
   lib/                calculs (remises, totaux, marge) et formatage
   data/catalogue.ts   suggestions de coloris et de types du formulaire produit
   components/         UI commune, graphiques SVG, ticket
-  pages/              Connexion, Tableau de bord, Caisse, Stock, Ventes, Clients, Promotions, Propriétaires,
+  pages/              Connexion, Tableau de bord, Caisse, Stock, Ventes, Clients, Promotions, Propriétaires, Rapports,
                       Paramètres, Espace entreprise (TenantPortal), Console super admin (SuperAdminDashboard)
 public/               manifest PWA, service worker, icône
 ```

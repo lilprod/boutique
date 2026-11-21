@@ -46,8 +46,8 @@ export default function Proprietaires() {
       <div className="page-head">
         <div><h1>{t('prop.titre')}</h1><p className="muted-p">{t('prop.sousTitre')}</p></div>
         <div className="page-actions period">
-          <button className="btn btn-sm" onClick={() => periode(0)}>Ce mois</button>
-          <button className="btn btn-sm" onClick={() => periode(-1)}>Mois dernier</button>
+          <button className="btn btn-sm" onClick={() => periode(0)}>{t('rap.ceMois')}</button>
+          <button className="btn btn-sm" onClick={() => periode(-1)}>{t('rap.moisDernier')}</button>
           <label className="field inline"><span className="field-label">{t('prop.du')}</span><input className="input" type="date" value={du} max={au} onChange={e => e.target.value && setDu(e.target.value)} /></label>
           <label className="field inline"><span className="field-label">{t('prop.au')}</span><input className="input" type="date" value={au} min={du} onChange={e => e.target.value && setAu(e.target.value)} /></label>
         </div>

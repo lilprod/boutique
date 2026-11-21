@@ -103,6 +103,11 @@ class Produit extends Model
         return $this->belongsTo(Boutique::class);
     }
 
+    public function proprietaire(): BelongsTo
+    {
+        return $this->belongsTo(Proprietaire::class);
+    }
+
     public function variantes(): HasMany
     {
         return $this->hasMany(Variante::class);
