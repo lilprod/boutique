@@ -51,8 +51,8 @@ src/
   types.ts            modèle de données
   api.ts              client HTTP : jeton Bearer, erreurs normalisées, chargement paginé
   lib/mappers.ts      conversion API (snake_case, ids numériques) <-> types du frontend
-  store.tsx           état global (Context) : produits, clients, paramètres, comptes ; actions métier asynchrones
-  lib/usePaged.ts     lecture paginée à la demande (ventes, mouvements) ; lib/useFetch.ts : lecture simple (tableau de bord)
+  store.tsx           état global (Context) : produits, paramètres, comptes, propriétaires, promotions ; actions métier asynchrones
+  lib/usePaged.ts     lecture paginée à la demande (ventes, mouvements, clients) ; lib/useFetch.ts : lecture simple (tableau de bord)
   i18n.ts             tous les textes de l'interface (français, anglais)
   lib/                calculs (remises, totaux, marge) et formatage
   data/catalogue.ts   suggestions de coloris et de types du formulaire produit
@@ -64,7 +64,7 @@ public/               manifest PWA, service worker, icône
 
 Les actions de `store.tsx` renvoient une promesse de `{ ok, error?, data? }` : les pages affichent `error` tel quel (message du serveur, dans la langue choisie). Après chaque modification, les données touchées sont rechargées depuis l'API.
 
-Le chargement à la connexion ne dépend pas de la taille de l'historique : les ventes (recherche, statut, dates), les mouvements de stock (type, coloris) et les statistiques du tableau de bord sont lus à la demande, filtrés et paginés par le serveur. Les clients sont chargés page par page, et leurs statistiques (achats, dépense, dernier achat) viennent de cette liste. Les paiements de l'espace entreprise et de la console sont paginés, avec « Afficher plus ».
+Le chargement à la connexion ne dépend pas de la taille de l'historique : les ventes (recherche, statut, dates), les mouvements de stock (type, coloris) et les statistiques du tableau de bord sont lus à la demande, filtrés et paginés par le serveur. Les clients ne sont pas chargés à la connexion : la caisse cherche dans l'API (20 résultats, pendant la frappe) et la page Clients pagine la liste filtrée par le serveur. Leurs statistiques (achats, dépense, dernier achat) et leur solde de points viennent de ces réponses. Les paiements de l'espace entreprise et de la console sont paginés, avec « Afficher plus ».
 
 ## Écarts par rapport au cahier des charges
 
@@ -77,4 +77,3 @@ Le chargement à la connexion ne dépend pas de la taille de l'historique : les 
 - **Tableau de bord** : fenêtre fixe de 30 jours ; pas encore de période au choix.
 - **Photos** : réduites à 360 px et ré-encodées en JPEG par le navigateur, puis envoyées comme fichier à l'API (`POST /produits/{id}/image`) après l'enregistrement du produit. Si l'envoi échoue, le produit reste enregistré et un message le signale ; rouvrez le produit pour renvoyer la photo.
 - **Jeton dans le `localStorage`** : lisible par tout script de la page ; la protection repose sur l'absence de contenu tiers, sur l'expiration à 12 h et sur les en-têtes de sécurité du serveur web (voir « Mise en production » dans le README du dépôt).
-- **Clients** : tous sont chargés au démarrage, page par page ; une recherche côté serveur reste à faire pour les gros fichiers clients.

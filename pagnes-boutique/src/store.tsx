@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartLine, Client, DB, ModePaiement, Parametres, Produit, Promotion, Proprietaire, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { ApiError, del, get, getAll, post, put, setUnauthorizedHandler, token } from './api';
+import { ApiError, del, get, post, put, setUnauthorizedHandler, token } from './api';
 import { fromClient, fromParametres, fromProduit, fromPromotion, fromProprietaire, fromUser, fromVente, toClient, toParametres, toProduit, toPromotion, toProprietaire, toUser, toVariante, toVente } from './lib/mappers';
 import { buildLignes, minimumNonAtteint, prixUnitaire, refusPoints, remisePoints, totaux, UNITES, vendAu } from './lib/calc';
 import { num, r2 } from './lib/format';
@@ -8,7 +8,7 @@ import { t, uniteLabel } from './i18n';
 
 export interface VarForm { id?: string; coloris: string; sku: string; c1: string; c2: string; seuil: number; stock?: number }
 export type PhotoChange = { file: Blob } | { remove: true };
-export interface VenteInput { cart: CartLine[]; clientId?: string; remise: Remise; mode: ModePaiement; reference?: string; recu?: number; pointsUtilises?: number }
+export interface VenteInput { cart: CartLine[]; clientId?: string; /** Fiche du client choisi (solde de points pour le contrôle immédiat). */ client?: Client; remise: Remise; mode: ModePaiement; reference?: string; recu?: number; pointsUtilises?: number }
 
 const fail = (error: string): Res<any> => ({ ok: false, error });
 const good = <T,>(data?: T): Res<T> => ({ ok: true, data });
@@ -61,11 +61,12 @@ export const useApp = () => {
  * Données chargées à la connexion : elles ne grossissent pas avec l'historique de la boutique.
  * Les ventes, mouvements et statistiques sont lus à la demande par les pages (voir lib/usePaged.ts).
  */
-type Part = 'produits' | 'clients' | 'parametres' | 'users' | 'fournisseurs' | 'proprietaires' | 'promotions';
-const ALL: Part[] = ['produits', 'clients', 'parametres', 'users', 'fournisseurs', 'proprietaires', 'promotions'];
+// Les clients n'en font pas partie : leur fichier grossit avec l'activité, la caisse et la page Clients les cherchent dans l'API.
+type Part = 'produits' | 'parametres' | 'users' | 'fournisseurs' | 'proprietaires' | 'promotions';
+const ALL: Part[] = ['produits', 'parametres', 'users', 'fournisseurs', 'proprietaires', 'promotions'];
 
 interface Data {
-  produits: Produit[]; variantes: Variante[]; clients: Client[];
+  produits: Produit[]; variantes: Variante[];
   parametres: Parametres;
   proprietaires: Proprietaire[];
   promotions: Promotion[];
@@ -74,7 +75,7 @@ interface Data {
   fournisseurs: string[];
 }
 const EMPTY: Data = {
-  produits: [], variantes: [], clients: [], comptes: null, fournisseurs: [], proprietaires: [], promotions: [],
+  produits: [], variantes: [], comptes: null, fournisseurs: [], proprietaires: [], promotions: [],
   parametres: {
     boutique: 'Pagnes de Lomé', adresse: '', telephone: '', ticketFormat: '80mm', remiseMaxVendeur: 15, messageTicket: '',
     autorisePagne: true, autoriseYard: false, autoriseMetre: false, quantiteMinPanier: 1, uniteStock: 'yard', multiProprietaires: false,
@@ -94,7 +95,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   shopModeRef.current = shopMode;
 
   const db = useMemo<DB>(() => ({
-    produits: data.produits, variantes: data.variantes, clients: data.clients,
+    produits: data.produits, variantes: data.variantes,
     users: data.comptes ?? (user ? [user] : []), // un vendeur n'a pas accès à la liste des comptes
     parametres: data.parametres, fournisseurs: data.fournisseurs, proprietaires: data.proprietaires, promotions: data.promotions,
   }), [data, user]);
@@ -110,9 +111,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const want = new Set(parts);
     const admin = currentRole === 'admin' || currentRole === 'boutique_admin' || (currentRole === 'tenant_admin' && shopModeRef.current);
-    const [produits, clients, parametres, comptes, fournisseurs, proprietaires, promotions] = await Promise.all([
+    const [produits, parametres, comptes, fournisseurs, proprietaires, promotions] = await Promise.all([
       want.has('produits') ? get<any[]>('/produits') : null,
-      want.has('clients') ? getAll<any>('/clients') : null, // liste paginée côté API
       want.has('parametres') ? get('/parametres') : null,
       want.has('users') && admin ? get<any[]>('/users') : null,
       want.has('fournisseurs') && admin ? get<string[]>('/fournisseurs') : null,
@@ -122,7 +122,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setData(prev => ({
       produits: produits ? produits.map(toProduit) : prev.produits,
       variantes: produits ? produits.flatMap(p => (p.variantes ?? []).map(toVariante)) : prev.variantes,
-      clients: clients ? clients.map(toClient) : prev.clients,
       parametres: parametres ? toParametres(parametres) : prev.parametres,
       comptes: comptes ? comptes.map(toUser) : prev.comptes,
       fournisseurs: fournisseurs ?? prev.fournisseurs,
@@ -280,7 +279,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const tot = totaux(lignes, i.remise);
       if (!['admin', 'boutique_admin'].includes(userRef.current.role) && !shopModeRef.current && tot.remiseEffPct > d.parametres.remiseMaxVendeur + 0.001) return fail(t('err.remiseMax', { max: String(d.parametres.remiseMaxVendeur) }));
       const points = i.clientId ? i.pointsUtilises ?? 0 : 0;
-      const refus = refusPoints(d.parametres, d.clients.find(c => c.id === i.clientId), points, tot.total);
+      const refus = refusPoints(d.parametres, i.client, points, tot.total);
       if (refus) return fail(t(refus.cle, refus.vars));
       const aPayer = tot.total - remisePoints(d.parametres, points);
       if ((i.mode === 'flooz' || i.mode === 'tmoney') && !(i.reference || '').trim()) return fail(t('err.reference'));
@@ -288,27 +287,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return run(async () => {
         // La vente est validée par le serveur (stock, remise, numéro) : c'est lui qui fait foi, pas ce calcul.
         const vente = toVente(await post('/ventes', fromVente(i)));
-        await load(['produits', 'clients']);
+        await load(['produits']); // stock vendu ; les points du client se relisent dans sa fiche
         return vente;
       });
     },
 
     annulerVente: async (id, motif) => {
       if (!motif.trim()) return fail(t('err.motifRequis'));
-      return run(async () => { await post(`/ventes/${id}/annuler`, { motif: motif.trim() }); await load(['produits', 'clients']); });
+      return run(async () => { await post(`/ventes/${id}/annuler`, { motif: motif.trim() }); await load(['produits']); });
     },
 
     saveClient: async c => {
       if (!c.nom.trim()) return fail(t('err.nomClient'));
-      const exists = dbRef.current.clients.some(x => x.id === c.id);
+      // Un client déjà enregistré porte l'identifiant numérique du serveur ; un nouveau, un identifiant provisoire (« c_… »).
+      const exists = /^\d+$/.test(c.id);
       return run(async () => {
         const saved = toClient(await (exists ? put(`/clients/${c.id}`, fromClient(c)) : post('/clients', fromClient(c))));
-        await load(['clients']);
-        return saved; // porte l'identifiant attribué par le serveur (la caisse s'en sert pour sélectionner le nouveau client)
+        // Porte l'identifiant attribué par le serveur (la caisse s'en sert pour sélectionner le nouveau client).
+        // La page qui affiche la liste des clients la relit elle-même.
+        return saved;
       });
     },
 
-    deleteClient: id => run(async () => { await del(`/clients/${id}`); await load(['clients']); }),
+    deleteClient: id => run(async () => { await del(`/clients/${id}`); }),
 
     // L'unité de stock peut convertir les quantités, et l'option propriétaires changer l'affichage : tout est relu.
     saveParametres: async p => run(async () => { await put('/parametres', fromParametres(p)); await load(['parametres', 'produits', 'proprietaires']); }),
@@ -328,7 +329,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!Math.round(points) || !motif.trim()) return fail(t('err.pointsAjust'));
       return run(async () => {
         await post(`/clients/${clientId}/points`, { points: Math.round(points), motif: motif.trim() });
-        await load(['clients']);
       });
     },
 

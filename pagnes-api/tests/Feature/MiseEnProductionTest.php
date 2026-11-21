@@ -196,4 +196,40 @@ class MiseEnProductionTest extends TestCase
         // La formule de démo est alors pleine : la limite de comptes actifs reste visible.
         $this->postJson('/api/users', $compte + ['email' => 'essai-2'])->assertStatus(422);
     }
+
+    // Recherche de clients côté serveur (caisse et page Clients)
+
+    public function test_la_recherche_de_clients_porte_sur_le_nom_le_telephone_et_l_adresse(): void
+    {
+        $c = $this->entreprise();
+        $autre = $this->entreprise();
+        $ici = ['tenant_id' => $c['tenant']->id, 'boutique_id' => $c['boutique']->id];
+        Client::create($ici + ['nom' => 'Afiwa Mensah', 'telephone' => '+228 90 12 34 56', 'adresse' => 'Bè']);
+        Client::create($ici + ['nom' => 'Komi Ablode', 'telephone' => '91000000', 'adresse' => 'Adidogomé']);
+        Client::create(['tenant_id' => $autre['tenant']->id, 'boutique_id' => $autre['boutique']->id, 'nom' => 'Afiwa Ailleurs']);
+        Sanctum::actingAs($c['vendeur']);
+
+        $noms = fn (string $q) => collect($this->getJson('/api/clients?q='.urlencode($q))->assertOk()->json('data'))->pluck('nom')->all();
+        $this->assertSame(['Afiwa Mensah'], $noms('afiwa'));          // jamais le client d'une autre entreprise
+        $this->assertSame(['Afiwa Mensah'], $noms('90123456'));       // chiffres seuls, espaces du numéro ignorés
+        $this->assertSame(['Afiwa Mensah'], $noms('90 12 34'));
+        $this->assertSame(['Komi Ablode'], $noms('adidogo'));
+        $this->assertSame([], $noms('a%b'));                          // `%` et `_` sont des caractères, pas des jokers
+        $this->assertSame([], $noms('Afiwa_'));
+        $this->assertCount(2, $noms(''));
+    }
+
+    public function test_la_fiche_client_donne_ses_statistiques_dans_sa_boutique_seulement(): void
+    {
+        $c = $this->entreprise();
+        $autre = $this->entreprise();
+        $client = Client::create(['tenant_id' => $c['tenant']->id, 'boutique_id' => $c['boutique']->id, 'nom' => 'Ama']);
+        $client->forceFill(['points' => 120])->save(); // le solde ne bouge que par FideliteService (non assignable)
+        $ailleurs = Client::create(['tenant_id' => $autre['tenant']->id, 'boutique_id' => $autre['boutique']->id, 'nom' => 'Ailleurs']);
+        Sanctum::actingAs($c['vendeur']);
+
+        $this->getJson('/api/clients/'.$client->id)->assertOk()
+            ->assertJsonPath('nom', 'Ama')->assertJsonPath('points', 120)->assertJsonPath('achats', 0)->assertJsonPath('depense', 0);
+        $this->getJson('/api/clients/'.$ailleurs->id)->assertNotFound();
+    }
 }

@@ -6,29 +6,65 @@ use App\Exceptions\RegleMetierException;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Services\FideliteService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class ClientController extends Controller
 {
+    /**
+     * Clients de la boutique, paginés (100 par défaut, 200 au plus), triés par nom.
+     * `?q=` : recherche dans le nom, le téléphone (chiffres seuls, espaces ignorés) et l'adresse.
+     * C'est cette recherche que la caisse et la page Clients interrogent à chaque frappe.
+     */
     public function index(Request $request)
     {
-        // withCount/withSum évitent le N+1 pour les colonnes « Achats » et « Total dépensé ».
-        return Client::query()
-            ->forCurrentTenant($request->user())
-            ->forCurrentBoutique($request->user())
-            ->withCount(['ventes as achats' => fn ($q) => $q->where('statut', 'validee')])
-            ->withSum(['ventes as depense' => fn ($q) => $q->where('statut', 'validee')], 'total')
-            ->withMax(['ventes as derniere_vente' => fn ($q) => $q->where('statut', 'validee')], 'created_at')
-            ->orderBy('nom')->orderBy('id')
-            // Paginé (100 par défaut, 200 au plus) : le fichier clients grossit avec l'activité.
-            ->paginate(max(1, min(200, $request->integer('per_page', 100))))
-            ->through(function (Client $c) {
-                $c->depense = (int) $c->depense;
-                $c->derniere_vente = $c->derniere_vente ? Carbon::parse($c->derniere_vente)->toIso8601String() : null;
+        $filtres = $request->validate(['q' => 'nullable|string|max:100']);
 
-                return $c;
-            });
+        return $this->avecStatistiques(Client::query()->forCurrentContext($request->user()))
+            ->when(trim($filtres['q'] ?? '') !== '', fn (Builder $q) => $this->recherche($q, trim($filtres['q'])))
+            ->orderBy('nom')->orderBy('id')
+            ->paginate(max(1, min(200, $request->integer('per_page', 100))))
+            ->through(fn (Client $c) => $this->formater($c));
+    }
+
+    /** Une fiche, avec les mêmes statistiques que la liste (solde de points à jour compris). */
+    public function show(Request $request, Client $client)
+    {
+        abort_unless($client->belongsToCurrentContext($request->user()), 404);
+
+        return $this->formater($this->avecStatistiques(Client::query())->findOrFail($client->id));
+    }
+
+    /** withCount/withSum/withMax : achats, dépense et dernier achat (ventes validées) sans requête par client. */
+    private function avecStatistiques(Builder $q): Builder
+    {
+        $validees = fn ($v) => $v->where('statut', 'validee');
+
+        return $q->withCount(['ventes as achats' => $validees])
+            ->withSum(['ventes as depense' => $validees], 'total')
+            ->withMax(['ventes as derniere_vente' => $validees], 'created_at');
+    }
+
+    private function recherche(Builder $q, string $mot): void
+    {
+        $like = '%'.addcslashes($mot, '%_\\').'%';
+        $chiffres = preg_replace('/\D+/', '', $mot);
+        $q->where(function (Builder $w) use ($like, $chiffres) {
+            $w->where('nom', 'like', $like)->orWhere('adresse', 'like', $like)->orWhere('telephone', 'like', $like);
+            // « 90 12 34 » retrouve « +228 90123456 » : on compare aussi les chiffres seuls.
+            if (strlen($chiffres) >= 3) {
+                $w->orWhereRaw("REPLACE(REPLACE(REPLACE(telephone, ' ', ''), '-', ''), '.', '') LIKE ?", ['%'.$chiffres.'%']);
+            }
+        });
+    }
+
+    private function formater(Client $c): Client
+    {
+        $c->depense = (int) $c->depense;
+        $c->derniere_vente = $c->derniere_vente ? Carbon::parse($c->derniere_vente)->toIso8601String() : null;
+
+        return $c;
     }
 
     public function store(Request $request)

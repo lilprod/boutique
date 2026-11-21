@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { LuGift, LuPencil, LuPlus, LuSearch, LuTrash2 } from 'react-icons/lu';
 import type { Client } from '../types';
 import { useApp } from '../store';
 import { t } from '../i18n';
 import { Badge, Empty, Modal, SkeletonRows, useUI } from '../components/ui';
 import { ClientForm } from '../components/ClientForm';
-import { toMouvementPoints } from '../lib/mappers';
+import { toClient, toMouvementPoints } from '../lib/mappers';
+import { useDebounced, usePaged } from '../lib/usePaged';
 import { useFetch } from '../lib/useFetch';
-import { cls, fcfa, fmtDate, fmtDateTime, norm, num } from '../lib/format';
+import { cls, fcfa, fmtDate, fmtDateTime, num } from '../lib/format';
 
 export default function Clients() {
   const { db, user, shopMode, deleteClient } = useApp();
@@ -18,16 +19,17 @@ export default function Clients() {
   const [pointsDe, setPointsDe] = useState<Client | null>(null);
   const fidelite = db.parametres.fideliteActive;
 
-  const rows = useMemo(() => db.clients
-    .filter(c => !q || norm([c.nom, c.telephone, c.adresse].join(' ')).includes(norm(q)))
-    // Nombre d'achats, montant dépensé et dernier achat : calculés par l'API sur les ventes validées.
-    .map(c => ({ c, n: c.achats ?? 0, total: c.depense ?? 0, last: c.derniereVente }))
-    .sort((a, b) => a.c.nom.localeCompare(b.c.nom, 'fr')), [db.clients, q]);
+  // Recherche et tri par l'API (nom, téléphone, adresse), 50 clients par page.
+  // Nombre d'achats, montant dépensé et dernier achat : calculés par l'API sur les ventes validées.
+  const qDeb = useDebounced(q.trim(), 300);
+  const list = usePaged('/clients', { q: qDeb }, toClient, { perPage: 50 });
+  const rows = list.rows.map(c => ({ c, n: c.achats ?? 0, total: c.depense ?? 0, last: c.derniereVente }));
 
   const remove = async (c: Client) => {
     if (!(await confirm({ title: t('clients.supprimerTitre'), message: t('clients.supprimerMsg', { nom: c.nom }), confirmLabel: t('common.supprimer'), danger: true }))) return;
     const r = await deleteClient(c.id);
-    r.ok ? toast(t('clients.supprime')) : toast(r.error!, 'err');
+    if (!r.ok) return toast(r.error!, 'err');
+    toast(t('clients.supprime')); void list.reload();
   };
 
   return (
@@ -59,22 +61,28 @@ export default function Clients() {
               ))}
             </tbody>
           </table>
-          {rows.length === 0 && <Empty title={t('common.aucunResultat')} />}
+          {list.loading && rows.length === 0 ? <SkeletonRows rows={4} label={t('app.chargement')} />
+            : list.error ? <Empty title={list.error} />
+            : rows.length === 0 && <Empty title={t('common.aucunResultat')} />}
         </div>
-        <div className="table-foot">{t('clients.compte', { n: String(rows.length) })}</div>
+        <div className="table-foot">
+          {t('clients.compte', { n: String(list.total) })}
+          {list.hasMore && <button className="btn btn-sm" type="button" disabled={list.loading} onClick={() => void list.more()}>{t('common.voirPlus')}</button>}
+        </div>
       </section>
-      {edit && <ClientForm client={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} />}
-      {pointsDe && <PointsModal client={db.clients.find(x => x.id === pointsDe.id) ?? pointsDe} admin={admin} onClose={() => setPointsDe(null)} />}
+      {edit && <ClientForm client={edit === 'new' ? undefined : edit} onClose={() => setEdit(null)} onSaved={() => void list.reload()} />}
+      {pointsDe && <PointsModal client={pointsDe} admin={admin} onChange={() => void list.reload()} onClose={() => setPointsDe(null)} />}
     </>
   );
 }
 
 /** Solde, historique des points et, pour l'administrateur, ajout ou retrait manuel avec motif. */
-function PointsModal({ client, admin, onClose }: { client: Client; admin: boolean; onClose: () => void }) {
+function PointsModal({ client, admin, onChange, onClose }: { client: Client; admin: boolean; onChange: () => void; onClose: () => void }) {
   const { ajusterPoints } = useApp();
   const { toast } = useUI();
   const h = useFetch<{ solde: number; mouvements: any[] }>(`/clients/${client.id}/points`);
   const mouvements = (h.data?.mouvements ?? []).map(toMouvementPoints);
+  const solde = h.data?.solde ?? client.points; // solde relu dans l'API après chaque ajustement
   const [points, setPoints] = useState('');
   const [motif, setMotif] = useState('');
   const [busy, setBusy] = useState(false);
@@ -86,13 +94,13 @@ function PointsModal({ client, admin, onClose }: { client: Client; admin: boolea
     const r = await ajusterPoints(client.id, Number(points), motif);
     setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
-    toast(t('fid.ajusteOk')); setPoints(''); setMotif(''); void h.reload();
+    toast(t('fid.ajusteOk')); setPoints(''); setMotif(''); void h.reload(); onChange();
   };
 
   return (
     <Modal title={`${t('fid.historique')} · ${client.nom}`} onClose={onClose}>
-      <div className="fid-box"><div className="fid-solde"><LuGift /><strong className={cls(client.points < 0 && 'red')}>{t('fid.solde', { n: num(client.points) })}</strong></div></div>
-      {client.points < 0 && <p className="hint">{t('fid.negatif')}</p>}
+      <div className="fid-box"><div className="fid-solde"><LuGift /><strong className={cls(solde < 0 && 'red')}>{t('fid.solde', { n: num(solde) })}</strong></div></div>
+      {solde < 0 && <p className="hint">{t('fid.negatif')}</p>}
       {admin && (
         <form className="fid-ajust" onSubmit={submit}>
           <span className="field-label">{t('fid.ajuster')}</span>

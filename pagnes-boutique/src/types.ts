@@ -69,9 +69,9 @@ export interface Parametres {
   fideliteActive: boolean; fideliteTranche: number; fideliteValeurPoint: number; fideliteSeuil: number; fideliteExpirationMois: number;
 }
 
-/** Données chargées à la connexion. L'historique (ventes, mouvements) et les statistiques sont lus à la demande, par page. */
+/** Données chargées à la connexion. L'historique (ventes, mouvements), les clients et les statistiques sont lus à la demande, par page. */
 export interface DB {
-  produits: Produit[]; variantes: Variante[]; clients: Client[];
+  produits: Produit[]; variantes: Variante[];
   /** Comptes (administrateur) ; pour un vendeur, uniquement lui-même. */
   users: User[]; parametres: Parametres; proprietaires: Proprietaire[];
   /** Administrateur : toutes les promotions ; vendeur : celles en cours. */

@@ -64,6 +64,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
         Route::get('clients', [ClientController::class, 'index']);
         Route::post('clients', [ClientController::class, 'store']);
         Route::put('clients/{client}', [ClientController::class, 'update']);
+        Route::get('clients/{client}', [ClientController::class, 'show']);
         Route::get('clients/{client}/points', [ClientController::class, 'points']);
 
         Route::get('tableau-de-bord', [StatistiqueController::class, 'tableauDeBord']);

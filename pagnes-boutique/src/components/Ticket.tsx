@@ -8,7 +8,7 @@ export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' 
   const { db } = useApp();
   const p = db.parametres;
   const vendeur = vente.vendeurNom ?? db.users.find(u => u.id === vente.vendeurId)?.nom;
-  const client = vente.clientNom ?? db.clients.find(c => c.id === vente.clientId)?.nom;
+  const client = vente.clientNom; // l'API joint le client à chaque vente
   const rendu = vente.paiement.recu ? vente.paiement.recu - vente.total : 0;
   return (
     <div className={'ticket ' + (format === 'A4' ? 'a4' : 'w80')}>

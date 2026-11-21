@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LuArrowDown, LuBanknote, LuCheck, LuCreditCard, LuPlus, LuSearch, LuShoppingBag, LuGift, LuSmartphone, LuTag, LuTrash2, LuUserPlus } from 'react-icons/lu';
-import type { CartLine, ModePaiement, Produit, Promotion, Remise, UniteVente, Variante, Vente } from '../types';
+import type { CartLine, Client, ModePaiement, Produit, Promotion, Remise, UniteVente, Variante, Vente } from '../types';
+import { get } from '../api';
+import { toClient } from '../lib/mappers';
+import { useDebounced } from '../lib/usePaged';
 import { useApp } from '../store';
 import { t, uniteLabel } from '../i18n';
 import { Badge, Bump, Empty, NumInput, Segmented, Swatch, animateOut, reducedMotion, useUI } from '../components/ui';
@@ -27,10 +30,22 @@ export default function Caisse() {
   const [proprio, setProprio] = useState(''); // option « plusieurs propriétaires » : '' = tous
   const multi = db.parametres.multiProprietaires && db.proprietaires.length > 0;
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [clientId, setClientId] = useState('');
+  const [client, setClient] = useState<Client | null>(null); // client choisi (fiche lue dans l'API, points compris)
   const [points, setPoints] = useState(0); // points de fidélité que le client veut utiliser
   const [clientQ, setClientQ] = useState('');
   const [newClient, setNewClient] = useState(false);
+  // Recherche côté serveur (nom, téléphone, adresse) : la caisse ne charge jamais tout le fichier clients.
+  const clientQDeb = useDebounced(clientQ.trim(), 250);
+  const [trouves, setTrouves] = useState<Client[]>([]);
+  useEffect(() => {
+    let perime = false;
+    const qs = new URLSearchParams({ per_page: '20' });
+    if (clientQDeb) qs.set('q', clientQDeb);
+    get<{ data: any[] }>(`/clients?${qs}`)
+      .then(r => { if (!perime) setTrouves(r.data.map(toClient)); })
+      .catch(() => { if (!perime) setTrouves([]); });
+    return () => { perime = true; }; // une réponse tardive d'une frappe précédente est ignorée
+  }, [clientQDeb]);
   const [remise, setRemise] = useState<Remise>(ZERO);
   const [mode, setMode] = useState<ModePaiement>('especes');
   const [reference, setReference] = useState('');
@@ -70,12 +85,11 @@ export default function Caisse() {
   if (!admin && tot.remiseEffPct > db.parametres.remiseMaxVendeur + 0.001) problems.push(t('err.remiseMax', { max: String(db.parametres.remiseMaxVendeur) }));
   // Fidélité : les points se déduisent après toutes les remises ; le client gagne des points sur ce qu'il paie.
   const fidelite = params.fideliteActive;
-  const client = db.clients.find(c => c.id === clientId);
   const pts = fidelite && client ? points : 0;
   const remPts = remisePoints(params, pts);
   const aPayer = tot.total - remPts;
   const gagnes = client ? pointsGagnes(params, aPayer) : 0;
-  const refus = refusPoints(params, client, pts, tot.total);
+  const refus = refusPoints(params, client ?? undefined, pts, tot.total);
   if (refus) problems.push(t(refus.cle, refus.vars));
 
   if ((mode === 'flooz' || mode === 'tmoney') && cart.length > 0 && !reference.trim()) problems.push(t('err.reference'));
@@ -86,14 +100,15 @@ export default function Caisse() {
   const submit = async () => {
     if (busy) return; // une seule vente à la fois : un double clic ne doit jamais créer deux ventes
     setBusy(true);
-    const r = await validerVente({ cart, clientId: clientId || undefined, remise, mode, reference, recu, pointsUtilises: pts });
+    const r = await validerVente({ cart, clientId: client?.id, client: client ?? undefined, remise, mode, reference, recu, pointsUtilises: pts });
     setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     setDone(r.data!);
-    setCart([]); setRemise(ZERO); setClientId(''); setClientQ(''); setReference(''); setRecu(0); setMode('especes'); setPoints(0);
+    setCart([]); setRemise(ZERO); setClient(null); setClientQ(''); setReference(''); setRecu(0); setMode('especes'); setPoints(0);
   };
 
-  const clientOpts = db.clients.filter(c => !clientQ || norm(c.nom + ' ' + c.telephone).includes(norm(clientQ))).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+  // Le client choisi reste dans la liste même si la recherche en cours ne le retrouve plus.
+  const clientOpts = client && !trouves.some(c => c.id === client.id) ? [client, ...trouves] : trouves;
 
   // Présentation uniquement : sur téléphone, une barre flottante résume le panier tant qu'il n'est pas à l'écran.
   const cartRef = useRef<HTMLElement>(null);
@@ -201,7 +216,7 @@ export default function Caisse() {
             <div className="field-label">{t('caisse.client')}</div>
             <div className="client-pick">
               <input className="input" placeholder={t('caisse.chercherClient')} value={clientQ} onChange={e => setClientQ(e.target.value)} aria-label={t('caisse.chercherClient')} />
-              <select className="select" value={clientId} onChange={e => { setClientId(e.target.value); setPoints(0); }} aria-label={t('caisse.client')}>
+              <select className="select" value={client?.id ?? ''} onChange={e => { setClient(clientOpts.find(c => c.id === e.target.value) ?? null); setPoints(0); }} aria-label={t('caisse.client')}>
                 <option value="">{t('caisse.passage')}</option>
                 {clientOpts.map(c => <option key={c.id} value={c.id}>{c.nom}{c.telephone ? ` — ${c.telephone}` : ''}</option>)}
               </select>
@@ -277,7 +292,7 @@ export default function Caisse() {
         <span className="cart-bar-go">{t('caisse.voirPanier')} <LuArrowDown aria-hidden="true" /></span>
       </button>
 
-      {newClient && <ClientForm onClose={() => setNewClient(false)} onSaved={c => { setClientId(c.id); setClientQ(''); }} />}
+      {newClient && <ClientForm onClose={() => setNewClient(false)} onSaved={c => { setClient(c); setPoints(0); setClientQ(''); }} />}
       {done && (
         <TicketModal vente={done} title={t('caisse.venteValidee', { n: numeroVente(done.numero) })} onClose={() => setDone(null)}
           lead={

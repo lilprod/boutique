@@ -13,7 +13,7 @@ Le dépôt contient deux applications :
 
 Le frontend lit toutes ses données dans l'API, avec un jeton Bearer. Le navigateur ne garde que le jeton, les préférences d'affichage (langue, thème) et la liste des notifications déjà lues. **L'API doit donc tourner avant d'ouvrir le frontend.**
 
-À la connexion, le frontend charge le catalogue, les clients, les paramètres et les comptes. L'historique est lu à la demande, filtré et paginé par le serveur : ventes, mouvements de stock, paiements. Les statistiques du tableau de bord sont calculées par la base.
+À la connexion, le frontend charge le catalogue, les paramètres et les comptes. Tout ce qui grossit avec l'activité est lu à la demande, filtré et paginé par le serveur : ventes, mouvements de stock, paiements, et clients (la caisse et la page Clients les cherchent dans l'API à chaque frappe). Les statistiques du tableau de bord sont calculées par la base.
 
 ## Organisation : plateforme, entreprises, boutiques
 
@@ -80,7 +80,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 123 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 125 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -179,7 +179,7 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 | Session | `POST /api/login`, `POST /api/logout`, `GET /api/me` |
 | Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image` |
 | Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
-| Clients | `GET` (paginé), `POST /api/clients`, `PUT /api/clients/{id}`, `GET /api/clients/{id}/points` ; admin : `DELETE /{id}`, `POST /{id}/points` (ajustement avec motif). La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
+| Clients | `GET /api/clients` (paginé, `?q=` : nom, téléphone, y compris sans les espaces, adresse), `GET /api/clients/{id}` (fiche et statistiques), `POST /api/clients`, `PUT /api/clients/{id}`, `GET /api/clients/{id}/points` ; admin : `DELETE /{id}`, `POST /{id}/points` (ajustement avec motif). La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
 | Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
 | Promotions | `GET /api/promotions` (en cours pour un vendeur, toutes pour l'admin) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}` |
 | Propriétaires | `GET /api/proprietaires` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /api/rapports/proprietaires` (`?du=`, `?au=`) |
@@ -252,8 +252,7 @@ pagnes-api/                     API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Clients à la caisse** : le frontend charge encore tous les clients au démarrage, page par page. Une recherche côté serveur allégerait les boutiques qui ont un gros fichier clients.
-2. **Création de boutiques** : une entreprise n'a pour l'instant que la boutique créée avec elle. Le jour où elle pourra en ajouter, la limite `max_boutiques` de la formule devra être contrôlée.
-3. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-4. **Hors ligne** : le service worker ne met en cache que l'application, pas les données, volontairement, car elles sont confidentielles. La caisse ne fonctionne donc pas sans réseau.
-5. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+1. **Création de boutiques** : une entreprise n'a pour l'instant que la boutique créée avec elle. Le jour où elle pourra en ajouter, la limite `max_boutiques` de la formule devra être contrôlée.
+2. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
+3. **Hors ligne** : le service worker ne met en cache que l'application, pas les données, volontairement, car elles sont confidentielles. La caisse ne fonctionne donc pas sans réseau.
+4. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
