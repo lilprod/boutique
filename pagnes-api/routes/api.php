@@ -85,6 +85,7 @@ Route::middleware(['auth:sanctum', 'actif', 'choisir_boutique'])->group(function
             Route::delete('produits/{produit}', [ProduitController::class, 'destroy']);
             Route::post('produits/{produit}/image', [ProduitController::class, 'image']);
             Route::delete('produits/{produit}/image', [ProduitController::class, 'supprimerImage']);
+            Route::get('produits/{produit}/prix', [ProduitController::class, 'prix']);
 
             Route::get('fournisseurs', [StatistiqueController::class, 'fournisseurs']);
             Route::post('variantes/{variante}/entree', [VarianteController::class, 'entree']);

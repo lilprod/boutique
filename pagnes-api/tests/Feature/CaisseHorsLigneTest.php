@@ -175,4 +175,44 @@ class CaisseHorsLigneTest extends TestCase
         $r = $this->venteHorsLigne(le: now()->addDay()->toIso8601String())->assertCreated();
         $this->assertTrue(Vente::findOrFail($r->json('id'))->created_at->lessThanOrEqualTo(now()));
     }
+
+    // Historique des prix
+
+    public function test_chaque_changement_de_prix_est_historise(): void
+    {
+        $produit = $this->variante->produit;
+        Sanctum::actingAs($this->admin);
+        $this->assertCount(1, $this->getJson('/api/produits/'.$produit->id.'/prix')->assertOk()->json()); // création
+
+        // Changement sans toucher aux prix : rien de nouveau. Nouveau prix de vente, puis nouveau prix d'achat (entrée de stock).
+        $produit->update(['motif' => 'Damier']);
+        $produit->update(['prix_pagne' => 12000]);
+        $this->postJson('/api/variantes/'.$this->variante->id.'/entree', ['unite' => 'pagne', 'quantite' => 5, 'prix_achat_pagne' => 7000])->assertOk();
+
+        $h = $this->getJson('/api/produits/'.$produit->id.'/prix')->assertOk()->json();
+        $this->assertCount(3, $h);
+        $this->assertSame([7000, 12000], [$h[0]['prix_achat_pagne'], $h[0]['prix_pagne']]);
+        $this->assertSame($this->admin->nom, $h[0]['utilisateur']['nom']);
+
+        Sanctum::actingAs($this->vendeur);
+        $this->getJson('/api/produits/'.$produit->id.'/prix')->assertForbidden();
+    }
+
+    public function test_une_vente_hors_ligne_prend_les_prix_du_moment_de_la_vente(): void
+    {
+        // Les prix d'il y a deux heures : 10 000 la vente, 6 000 l'achat. Le prix passe ensuite à 12 000.
+        \App\Models\PrixProduit::where('produit_id', $this->variante->produit_id)->update(['valable_du' => now()->subDays(2)]);
+        $this->travel(-1)->hours(); // le changement de prix date d'il y a une heure
+        $this->variante->produit->update(['prix_pagne' => 12000, 'prix_achat_pagne' => 7000]);
+        $this->travelBack();
+
+        // Vente faite il y a deux heures, hors ligne, encaissée 10 000 : aucun écart, marge au prix d'achat d'alors.
+        $r = $this->venteHorsLigne(le: now()->subHours(2)->toIso8601String(), total: 10000)->assertCreated();
+        $this->assertSame(10000, $r->json('total'));
+        $this->assertNull($r->json('anomalies'));
+        $this->assertSame(4000, Vente::findOrFail($r->json('id'))->marge);
+
+        // Une vente hors ligne faite après le changement prend le nouveau prix.
+        $this->venteHorsLigne(le: now()->subMinutes(10)->toIso8601String(), total: 12000)->assertCreated()->assertJsonPath('total', 12000);
+    }
 }

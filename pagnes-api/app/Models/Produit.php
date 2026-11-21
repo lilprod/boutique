@@ -20,6 +20,49 @@ class Produit extends Model
 
     public const YARD_EN_METRES = 0.9144;
 
+    /** Prix suivis dans l'historique (table prix_produits). */
+    public const CHAMPS_PRIX = ['prix_pagne', 'prix_yard', 'prix_metre', 'prix_achat_pagne'];
+
+    /** Chaque création, et chaque changement d'un prix (fiche produit, prix d'achat d'une entrée de stock), est historisé. */
+    protected static function booted(): void
+    {
+        static::saved(function (Produit $p) {
+            if (! $p->wasRecentlyCreated && ! $p->wasChanged(self::CHAMPS_PRIX)) {
+                return;
+            }
+            PrixProduit::create([
+                'tenant_id' => $p->tenant_id, 'boutique_id' => $p->boutique_id, 'produit_id' => $p->id,
+                'prix_pagne' => (int) $p->prix_pagne, 'prix_yard' => (int) $p->prix_yard,
+                'prix_metre' => (int) ($p->prix_metre ?? 0), 'prix_achat_pagne' => (int) $p->prix_achat_pagne,
+                'user_id' => auth()->id(), 'valable_du' => now(),
+            ]);
+        });
+    }
+
+    public function historiquePrix(): HasMany
+    {
+        return $this->hasMany(PrixProduit::class);
+    }
+
+    /**
+     * Le produit avec les prix qui étaient en vigueur à cette date (vente faite hors ligne).
+     * Copie en mémoire, jamais enregistrée ; sans historique pour cette date : les prix actuels.
+     */
+    public function aLaDate(\DateTimeInterface $date): self
+    {
+        $h = $this->historiquePrix()->where('valable_du', '<=', $date)->latest('valable_du')->latest('id')->first();
+        if (! $h) {
+            return $this;
+        }
+        $copie = clone $this;
+        foreach (self::CHAMPS_PRIX as $champ) {
+            $copie->setAttribute($champ, $h->{$champ});
+        }
+        $copie->syncOriginal(); // une copie : rien à enregistrer
+
+        return $copie;
+    }
+
     public const UNITES = ['pagne', 'yard', 'metre'];
 
     public const LIBELLES_UNITES = ['pagne' => 'pagne', 'yard' => 'yard', 'metre' => 'mètre'];

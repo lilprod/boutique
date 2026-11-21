@@ -119,7 +119,8 @@ class VenteService
                 if (! $variante) {
                     throw new RegleMetierException('Article introuvable.');
                 }
-                $produit = $variante->produit;
+                // Hors ligne : les prix (vente et achat, donc la marge) qui étaient en vigueur à l'heure de la vente.
+                $produit = $venduLe !== null ? $variante->produit->aLaDate($venduLe) : $variante->produit;
                 $unite = $l['unite'];
                 $libelle = Produit::libelleUnite($unite);
                 if (! $parametres->autorise($unite) || ! $produit->vendAu($unite)) {

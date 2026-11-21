@@ -3,6 +3,7 @@ import { LuHistory, LuImagePlus, LuPackagePlus, LuPencil, LuPlus, LuSearch, LuSl
 import type { Mouvement, Produit, UniteVente, Variante } from '../types';
 import { toMouvement } from '../lib/mappers';
 import { usePaged } from '../lib/usePaged';
+import { useFetch } from '../lib/useFetch';
 import { useApp, type PhotoChange, type VarForm } from '../store';
 import { t, uniteLabel } from '../i18n';
 import { Badge, Empty, Field, Modal, NumInput, Segmented, SkeletonRows, Swatch, resizeImage, useUI } from '../components/ui';
@@ -290,8 +291,44 @@ function ProduitForm({ id, onClose }: { id?: string; onClose: () => void }) {
             ))}
           </div>
         </div>
+        {existing && <HistoriquePrix produitId={existing.id} metre={params.autoriseMetre} />}
       </form>
     </Modal>
+  );
+}
+
+/** Historique des prix du produit (administrateur), lu seulement quand on ouvre la section. */
+function HistoriquePrix({ produitId, metre }: { produitId: string; metre: boolean }) {
+  const [ouvert, setOuvert] = useState(false);
+  return (
+    <details className="span3 prix-histo" onToggle={e => setOuvert((e.target as HTMLDetailsElement).open)}>
+      <summary><LuHistory /> {t('stock.historiquePrix')}</summary>
+      {ouvert && <ListePrix produitId={produitId} metre={metre} />}
+    </details>
+  );
+}
+
+function ListePrix({ produitId, metre }: { produitId: string; metre: boolean }) {
+  const h = useFetch<any[]>(`/produits/${produitId}/prix`);
+  if (h.loading && !h.data) return <SkeletonRows rows={2} label={t('app.chargement')} />;
+  if (h.error) return <p className="error">{h.error}</p>;
+  const lignes = h.data ?? [];
+  if (lignes.length === 0) return <Empty title={t('stock.aucunPrix')} />;
+  return (
+    <div className="table-wrap">
+      <table className="tbl">
+        <thead><tr><th>{t('stock.depuis')}</th><th className="r">{t('stock.prixPagne')}</th><th className="r">{t('stock.prixYard')}</th>{metre && <th className="r">{t('stock.prixMetre')}</th>}<th className="r">{t('stock.prixAchatPagne')}</th><th>{t('ventes.vendeur')}</th></tr></thead>
+        <tbody>
+          {lignes.map(l => (
+            <tr key={l.id}>
+              <td className="nowrap">{fmtDateTime(l.valable_du)}</td>
+              <td className="r">{fcfa(l.prix_pagne)}</td><td className="r">{fcfa(l.prix_yard)}</td>{metre && <td className="r">{fcfa(l.prix_metre)}</td>}
+              <td className="r">{fcfa(l.prix_achat_pagne)}</td><td className="muted-s">{l.utilisateur?.nom ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

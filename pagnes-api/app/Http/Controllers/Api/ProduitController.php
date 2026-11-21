@@ -103,6 +103,14 @@ class ProduitController extends Controller
         }
     }
 
+    /** Historique des prix du produit, le plus récent d'abord (administrateur : prix d'achat compris). */
+    public function prix(Request $request, Produit $produit)
+    {
+        abort_unless($produit->belongsToCurrentContext($request->user()), 404);
+
+        return $produit->historiquePrix()->with('utilisateur:id,nom')->latest('valable_du')->latest('id')->limit(100)->get();
+    }
+
     public function supprimerImage(Request $request, Produit $produit)
     {
         abort_unless($produit->belongsToCurrentContext($request->user()), 404);

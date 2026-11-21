@@ -86,7 +86,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 143 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 145 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -143,6 +143,7 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 - **Ventes immuables** : une vente validée ne se modifie pas. Seul l'administrateur l'annule, avec un motif obligatoire ; le stock est restauré une seule fois.
 - **Concurrence** : ventes et annulations verrouillent les lignes concernées dans une transaction (`lockForUpdate`). Cela évite de vendre deux fois le dernier mètre, d'attribuer deux fois le même numéro de vente ou de dépenser deux fois les mêmes points.
 - **Historique** : chaque entrée, vente, annulation et ajustement est journalisé. Un produit déjà vendu ne peut pas être supprimé.
+- **Historique des prix** : chaque création de produit et chaque changement de prix (fiche produit, ou prix d'achat saisi lors d'une entrée de stock) est gardé avec sa date et son auteur. L'administrateur le consulte dans la fiche produit.
 - **Stock jamais négatif** : contrôlé par l'application et garanti par une contrainte en base (`CHECK (stock >= 0)`, MySQL 8.0.16+ ou MariaDB 10.2+).
 
 ### Caisse hors ligne
@@ -163,7 +164,7 @@ Quand le serveur ne répond plus, la caisse continue de vendre.
   - Renvoyer une vente ne crée jamais de doublon (même `uuid`).
 - **Réception par le serveur** :
   - La vente reçoit son numéro et garde son heure réelle.
-  - Le serveur applique les promotions du jour de la vente et les prix actuels des articles, faute d'historique des prix.
+  - Le serveur applique les **prix et promotions en vigueur à l'heure de la vente**, retrouvés dans l'historique des prix (vente et achat, donc la marge aussi).
   - Ce qui a changé entre-temps ne bloque pas la vente : stock insuffisant, unité plus autorisée, minimum, plafond de remise, écart entre le montant encaissé et le montant recalculé. Ces écarts sont enregistrés comme **anomalies**.
   - **Le stock n'est jamais négatif**, pour ne pas fausser les inventaires. Si le stock ne suffit plus, il descend à 0 et la quantité manquante est notée sur la ligne de vente (`manque_stock`). Une annulation ne remet en stock que ce qui en était vraiment sorti.
   - L'administrateur en est prévenu par la cloche, et les ventes concernées portent les badges « Hors ligne » et « À vérifier ».
@@ -213,7 +214,7 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 | Domaine | Routes |
 |---|---|
 | Session | `POST /api/login`, `POST /api/logout`, `GET /api/me` |
-| Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image` |
+| Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image`, `GET /{id}/prix` (historique des prix) |
 | Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
 | Clients | `GET /api/clients` (paginé, `?q=` : nom, téléphone, y compris sans les espaces, adresse), `GET /api/clients/{id}` (fiche et statistiques), `POST /api/clients`, `PUT /api/clients/{id}`, `GET /api/clients/{id}/points` ; admin : `DELETE /{id}`, `POST /{id}/points` (ajustement avec motif). La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
 | Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` (`uuid` facultatif : un renvoi répond `200` avec la vente déjà reçue ; `hors_ligne: { vendue_le, total }` pour une vente faite sans réseau) ; admin : `POST /api/ventes/{id}/annuler` |

@@ -850,3 +850,8 @@ input[type="file"].input { padding: 7px var(--s-2); }
 .hl-detail.warn { background: var(--gold-soft); color: var(--gold-ink); }
 .hl-detail ul { margin: 4px 0 0; padding-left: 18px; }
 @media (max-width: 640px) { .offline-band { margin: 0 var(--s-4) var(--s-3); } .offline-head { flex-wrap: wrap; } }
+
+/* Historique des prix dans la fiche produit */
+.prix-histo { border-top: 1px solid var(--border); padding-top: var(--s-3); }
+.prix-histo > summary { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+.prix-histo[open] > summary { margin-bottom: var(--s-2); }
