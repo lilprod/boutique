@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
-Route::middleware(['auth:sanctum', 'actif'])->group(function () {
+// choisir_boutique : le gérant travaille dans la boutique indiquée par l'en-tête X-Boutique (voir ChoisirBoutique).
+Route::middleware(['auth:sanctum', 'actif', 'choisir_boutique'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
@@ -27,6 +28,7 @@ Route::middleware(['auth:sanctum', 'actif'])->group(function () {
         Route::get('/dashboard', [TenantPortalController::class, 'dashboard']);
         Route::get('/notifications', [TenantPortalController::class, 'notifications']);
         Route::get('/boutiques', [TenantPortalController::class, 'boutiques']);
+        Route::post('/boutiques', [TenantPortalController::class, 'storeBoutique']);
         Route::get('/subscription', [TenantPortalController::class, 'subscription']);
         Route::get('/payments', [TenantPortalController::class, 'payments']);
         Route::get('/payments/{paymentId}/invoice', [TenantPortalController::class, 'invoice']);

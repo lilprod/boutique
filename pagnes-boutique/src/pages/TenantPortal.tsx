@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   LuArrowRight, LuBadgeCheck, LuCalendarClock, LuCircleAlert, LuFileText, LuKeyRound, LuLayers, LuMapPin,
-  LuPaperclip, LuPhone, LuShieldCheck, LuStore, LuUsers,
+  LuPaperclip, LuPhone, LuPlus, LuShieldCheck, LuStore, LuUsers,
 } from 'react-icons/lu';
-import { get, getBlob } from '../api';
+import { get, getBlob, post } from '../api';
 import { useApp } from '../store';
 import { t } from '../i18n';
-import { CountUp, Empty, Skeleton, SkeletonRows } from '../components/ui';
+import { CountUp, Empty, Field, Modal, Skeleton, SkeletonRows, useUI } from '../components/ui';
 import { cls, fcfa, fmtDate } from '../lib/format';
 
 interface TenantSummary {
@@ -101,6 +101,9 @@ export default function TenantPortal() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [nouvelleBoutique, setNouvelleBoutique] = useState(false);
+  const [recharge, setRecharge] = useState(0); // incrémenté pour relire le tableau de bord (nouvelle boutique)
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -124,7 +127,7 @@ export default function TenantPortal() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [recharge]);
 
   /* Factures paginées : les pages suivantes s'ajoutent à la liste. */
   const morePayments = async () => {
@@ -155,8 +158,9 @@ export default function TenantPortal() {
     }
   };
 
-  const enterBoutique = async () => {
-    const result = await openBoutique();
+  /** Sans identifiant : la boutique de rattachement du gérant. */
+  const enterBoutique = async (boutiqueId?: number) => {
+    const result = await openBoutique(boutiqueId);
     if (!result.ok) setError(result.error ?? t('tp.erreurBoutique'));
   };
 
@@ -202,6 +206,8 @@ export default function TenantPortal() {
   const planName = data.stats.plan_name ?? data.subscription?.plan?.nom;
   const currentPlan = plans.find(p => String(p.id) === String(data.subscription?.plan?.id ?? '')) ?? data.subscription?.plan;
   const expiration = data.stats.license_expires_at ?? data.license?.expires_at;
+  // Formule pleine : le bouton est bloqué ici, et l'API refuse de toute façon (422).
+  const limiteBoutiques = currentPlan?.max_boutiques != null && data.boutiques.length >= currentPlan.max_boutiques;
   const joursRestants = expiration ? Math.ceil((new Date(expiration).getTime() - Date.now()) / 86_400_000) : null;
 
   return (
@@ -290,8 +296,13 @@ export default function TenantPortal() {
       <section className="panel">
         <div className="panel-head">
           <div><h2>{t('tp.vosBoutiques')}</h2><p className="panel-sub">{t('tp.vosBoutiquesSous')}</p></div>
-          <span className="badge info">{data.boutiques.length}</span>
+          <div className="row-actions">
+            <span className="badge info">{data.boutiques.length}{currentPlan?.max_boutiques != null ? ` / ${currentPlan.max_boutiques}` : ''}</span>
+            <button className="btn btn-sm" type="button" disabled={limiteBoutiques} title={limiteBoutiques ? t('tp.limiteBoutiques') : undefined}
+              onClick={() => setNouvelleBoutique(true)}><LuPlus /> {t('tp.nouvelleBoutique')}</button>
+          </div>
         </div>
+        {limiteBoutiques && <p className="hint">{t('tp.limiteBoutiques')}</p>}
         {data.boutiques.length === 0 ? <Empty title={t('tp.aucuneBoutique')} /> : (
           <ul className="shop-grid">
             {data.boutiques.map((boutique, i) => (
@@ -299,11 +310,16 @@ export default function TenantPortal() {
                 <div className="shop-top"><span className="shop-mark" aria-hidden="true" /><strong className="grow ellipsis">{boutique.nom}</strong><StatusBadge status={boutique.statut} /></div>
                 <div className="muted-s shop-line"><LuMapPin /> {boutique.adresse ?? t('tp.adresseInconnue')}</div>
                 <div className="muted-s shop-line"><LuPhone /> {boutique.telephone ?? t('tp.telephoneInconnu')}</div>
+                {boutique.statut === 'active' && (
+                  <button className="btn btn-sm" type="button" onClick={() => void enterBoutique(boutique.id)}><LuStore /> {t('tp.ouvrir')} <LuArrowRight /></button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {nouvelleBoutique && <NouvelleBoutique onClose={() => setNouvelleBoutique(false)} onCreated={() => setRecharge(n => n + 1)} />}
 
       <section className="panel">
         <div className="panel-head">
@@ -353,5 +369,37 @@ export default function TenantPortal() {
         </div>
       </section>
     </div>
+  );
+}
+
+/** Ajout d'une boutique par le gérant : elle reçoit ses propres paramètres, puis s'ouvre depuis sa carte. */
+function NouvelleBoutique({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { toast } = useUI();
+  const [f, setF] = useState({ nom: '', adresse: '', telephone: '' });
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      await post('/tenant/boutiques', { nom: f.nom.trim(), adresse: f.adresse.trim() || null, telephone: f.telephone.trim() || null });
+      toast(t('tp.boutiqueCreee', { nom: f.nom.trim() }));
+      onCreated(); onClose();
+    } catch (err: any) {
+      toast(err?.message ?? t('tp.erreurBoutique'), 'err');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={t('tp.nouvelleBoutique')} onClose={onClose} size="sm"
+      footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="boutique-form" type="submit" disabled={busy}>{t('common.enregistrer')}</button></>}>
+      <form id="boutique-form" className="form-col" onSubmit={submit}>
+        <Field label={t('sa.f.nomBoutique')}><input className="input" value={f.nom} onChange={e => setF({ ...f, nom: e.target.value })} placeholder={t('sa.f.nomBoutiqueEx')} maxLength={150} required autoFocus /></Field>
+        <Field label={t('clients.adresse')}><input className="input" value={f.adresse} onChange={e => setF({ ...f, adresse: e.target.value })} placeholder={t('sa.f.adresseEx')} maxLength={190} /></Field>
+        <Field label={t('clients.telephone')}><input className="input" inputMode="tel" value={f.telephone} onChange={e => setF({ ...f, telephone: e.target.value })} placeholder="+228 90 00 00 00" maxLength={40} /></Field>
+        <p className="hint">{t('tp.nouvelleBoutiqueHint')}</p>
+      </form>
+    </Modal>
   );
 }

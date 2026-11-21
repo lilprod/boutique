@@ -18,7 +18,7 @@ Le frontend lit toutes ses données dans l'API, avec un jeton Bearer. Le navigat
 ## Organisation : plateforme, entreprises, boutiques
 
 - **Plateforme** : le super administrateur crée les entreprises clientes et les formules d'abonnement. Il encaisse les paiements (espèces, carte, T-Money, Flooz) et renouvelle abonnements et licences. Il n'appartient à aucune entreprise.
-- **Entreprise** (*tenant*) : elle a un abonnement, une licence et une ou plusieurs boutiques. Son gérant voit l'espace entreprise : abonnement, factures, justificatifs de paiement et clé de licence.
+- **Entreprise** (*tenant*) : elle a un abonnement, une licence et une ou plusieurs boutiques. Son gérant voit l'espace entreprise : abonnement, factures, justificatifs de paiement et clé de licence. Il y ajoute des boutiques, dans la limite de sa formule (`max_boutiques`), et ouvre celle de son choix pour y travailler.
 - **Boutique** : toutes les données métier (produits, stock, ventes, clients, paramètres) appartiennent à une boutique et restent invisibles des autres boutiques et des autres entreprises.
 
 L'accès d'une entreprise est ouvert tant que son abonnement est valable :
@@ -80,7 +80,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 125 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 131 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -148,10 +148,13 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 | Voir prix d'achat, marge, coûts | non | oui | oui | — |
 | Produits, entrées de stock, inventaire, promotions, propriétaires | non | oui | oui | — |
 | Annuler une vente, supprimer un client, ajuster des points | non | oui | oui | — |
+| Créer une boutique, ouvrir une autre boutique de l'entreprise | non | non | oui | — |
 | Paramètres de la boutique | non | oui | oui | — |
 | Comptes de la boutique | non | vendeurs et admins de boutique | tous, y compris nommer un gérant | — |
 | Espace entreprise (abonnement, factures, clé de licence) | non | non | oui | — |
 | Entreprises, formules, paiements, renouvellements | non | non | non | oui |
+
+Le gérant travaille dans la boutique qu'il a ouverte : l'interface envoie l'en-tête `X-Boutique: <id>`, et l'API ne l'accepte que pour une boutique active de son entreprise. Son rattachement en base ne change pas, et deux appareils peuvent ouvrir deux boutiques différentes. Les autres rôles restent attachés à leur boutique, même s'ils envoient cet en-tête.
 
 Personne ne peut attribuer un rôle supérieur au sien. Le dernier administrateur actif d'une boutique ne peut être ni désactivé ni rétrogradé. Le gérant ouvre l'espace boutique depuis son espace entreprise. Le rôle historique `admin` est traité comme un gérant par l'API.
 
@@ -192,9 +195,10 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 
 Toutes ces routes commencent par `/api/tenant` :
 - `GET /dashboard`, `/boutiques`, `/subscription`, `/plans`, `/notifications` ;
+- `POST /boutiques` (`nom`, `adresse`, `telephone`) : ajoute une boutique avec ses paramètres, dans la limite de la formule (`422` au-delà) ;
 - `GET /payments` (paginé), `/payments/{id}/invoice`, `/payments/{id}/attachment`.
 
-Lecture seule : le renouvellement et les paiements passent par le super admin.
+Le renouvellement et les paiements passent par le super admin.
 
 ### Console de la plateforme (super admin)
 
@@ -237,8 +241,8 @@ pagnes-api/                     API Laravel
   app/Services/                 règles métier : ventes, stock, produits, fidélité, propriétaires,
                                 licences et renouvellements, notifications
   app/Http/Controllers/Api/     contrôleurs REST (valident, appellent un service)
-  app/Http/Middleware/          droits (admin, gérant, super admin), accès de l'entreprise, langue,
-                                en-têtes de sécurité
+  app/Http/Middleware/          droits (admin, gérant, super admin), accès de l'entreprise, boutique ouverte
+                                par le gérant (X-Boutique), langue, en-têtes de sécurité
   app/Models/Concerns/          TenantScoped : filtre par entreprise et par boutique
   database/migrations/          schéma
   database/seeders/             données de démonstration (refusées en production)
@@ -252,7 +256,6 @@ pagnes-api/                     API Laravel
 
 À faire, par ordre de priorité :
 
-1. **Création de boutiques** : une entreprise n'a pour l'instant que la boutique créée avec elle. Le jour où elle pourra en ajouter, la limite `max_boutiques` de la formule devra être contrôlée.
-2. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-3. **Hors ligne** : le service worker ne met en cache que l'application, pas les données, volontairement, car elles sont confidentielles. La caisse ne fonctionne donc pas sans réseau.
-4. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+1. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
+2. **Hors ligne** : le service worker ne met en cache que l'application, pas les données, volontairement, car elles sont confidentielles. La caisse ne fonctionne donc pas sans réseau.
+3. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.

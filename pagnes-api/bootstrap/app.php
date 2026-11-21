@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ChoisirBoutique;
 use App\Http\Middleware\DefinirLangue;
 use App\Http\Middleware\EnTetesSecurite;
 use App\Http\Middleware\EnsureActif;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => EnsureAdmin::class,
             'boutique_context' => EnsureBoutiqueContext::class,
+            'choisir_boutique' => ChoisirBoutique::class,
             'actif' => EnsureActif::class,
             'super_admin' => EnsureSuperAdmin::class,
             'tenant_active' => EnsureTenantActive::class,

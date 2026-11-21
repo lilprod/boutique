@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Boutique;
+use App\Models\Parametre;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -69,6 +71,48 @@ class TenantPortalController extends Controller
         return response()->json(
             Boutique::where('tenant_id', $user->tenant_id)->orderBy('nom')->get()
         );
+    }
+
+    /**
+     * Le gérant ajoute une boutique à son entreprise, dans la limite de sa formule (max_boutiques).
+     * Elle reçoit ses propres paramètres (nom repris sur le ticket et dans l'en-tête) ; le gérant
+     * l'ouvre ensuite avec l'en-tête X-Boutique et y crée ses comptes.
+     */
+    public function storeBoutique(Request $request)
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'nom' => 'required|string|max:150',
+            'adresse' => 'nullable|string|max:190',
+            'telephone' => 'nullable|string|max:40',
+        ], [
+            'nom.required' => __('Le nom de la boutique est obligatoire.'),
+        ]);
+
+        $boutique = DB::transaction(function () use ($user, $data) {
+            // Verrou sur l'entreprise : deux créations simultanées ne dépassent pas la limite.
+            $tenant = Tenant::whereKey($user->tenant_id)->lockForUpdate()->firstOrFail();
+            if (! $tenant->canAddBoutique()) {
+                abort(422, __('Limite de boutiques atteinte pour votre offre. Changez d\'offre pour en ajouter.'));
+            }
+
+            $boutique = Boutique::create([
+                'tenant_id' => $tenant->id, 'nom' => trim($data['nom']),
+                'adresse' => $data['adresse'] ?? null, 'telephone' => $data['telephone'] ?? null,
+                'devise' => 'XOF', 'timezone' => 'Africa/Lome', 'statut' => 'active',
+            ]);
+            Parametre::create([
+                'tenant_id' => $tenant->id, 'boutique_id' => $boutique->id,
+                'boutique' => $boutique->nom, 'adresse' => $boutique->adresse, 'telephone' => $boutique->telephone,
+                'ticket_format' => '80mm', 'remise_max_vendeur' => 15,
+                'autorise_pagne' => true, 'autorise_yard' => false, 'autorise_metre' => false,
+                'quantite_min_panier' => 1, 'unite_stock' => 'yard',
+            ]);
+
+            return $boutique;
+        });
+
+        return response()->json($boutique, 201);
     }
 
     public function subscription(Request $request)

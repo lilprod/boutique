@@ -20,6 +20,21 @@ export const token = {
 let onUnauthorized: () => void = () => {};
 export const setUnauthorizedHandler = (fn: () => void) => { onUnauthorized = fn; };
 
+/**
+ * Boutique ouverte par le gérant (en-tête X-Boutique). Sans valeur, l'API travaille dans la boutique
+ * de rattachement du compte. Gardée en mémoire seulement : un rechargement revient à l'espace entreprise.
+ */
+let boutiqueOuverte: string | null = null;
+export const setBoutiqueOuverte = (id: string | null) => { boutiqueOuverte = id; };
+const enTetesCommuns = (accept: string): Record<string, string> => {
+  // X-Langue : l'API répond dans la langue choisie dans l'application (messages d'erreur, notifications).
+  const headers: Record<string, string> = { Accept: accept, 'X-Langue': langue() };
+  const tk = token.get();
+  if (tk) headers.Authorization = `Bearer ${tk}`;
+  if (boutiqueOuverte) headers['X-Boutique'] = boutiqueOuverte;
+  return headers;
+};
+
 /** Message lisible : `message` du serveur (422 métier), sinon première erreur de validation, sinon un texte générique. */
 function messageOf(status: number, body: any): string {
   const first = body?.errors && Object.values<string[]>(body.errors)[0]?.[0];
@@ -32,10 +47,7 @@ function messageOf(status: number, body: any): string {
 }
 
 export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  // X-Langue : l'API répond dans la langue choisie dans l'application (messages d'erreur, notifications).
-  const headers: Record<string, string> = { Accept: 'application/json', 'X-Langue': langue() };
-  const tk = token.get();
-  if (tk) headers.Authorization = `Bearer ${tk}`;
+  const headers = enTetesCommuns('application/json');
   // FormData (envoi de fichier) : le navigateur fixe lui-même le Content-Type, avec la limite multipart.
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
@@ -49,7 +61,7 @@ export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    if (res.status === 401 && tk && path !== '/login') onUnauthorized();
+    if (res.status === 401 && headers.Authorization && path !== '/login') onUnauthorized();
     throw new ApiError(messageOf(res.status, data), res.status);
   }
   return data as T;
@@ -61,9 +73,7 @@ export const put = <T = any>(path: string, body?: unknown) => request<T>('PUT', 
 export const del = <T = any>(path: string) => request<T>('DELETE', path);
 
 export async function getBlob(path: string): Promise<Blob> {
-  const headers: Record<string, string> = { Accept: '*/*', 'X-Langue': langue() };
-  const tk = token.get();
-  if (tk) headers.Authorization = `Bearer ${tk}`;
+  const headers = enTetesCommuns('*/*');
 
   let res: Response;
   try {
@@ -74,7 +84,7 @@ export async function getBlob(path: string): Promise<Blob> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    if (res.status === 401 && tk) onUnauthorized();
+    if (res.status === 401 && headers.Authorization) onUnauthorized();
     throw new ApiError(messageOf(res.status, body), res.status);
   }
 

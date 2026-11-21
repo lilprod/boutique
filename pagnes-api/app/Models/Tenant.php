@@ -105,9 +105,13 @@ class Tenant extends Model
 
     public function canAddBoutique(): bool
     {
+        // Comme pour les comptes : une offre retirée du catalogue reste valable pour qui l'a souscrite.
         $subscription = $this->activeSubscription();
-        if (! $subscription || ! $subscription->plan || ! $subscription->plan->actif) {
+        if (! $subscription || ! $subscription->plan) {
             return false;
+        }
+        if ($subscription->plan->max_boutiques === null) {
+            return true;
         }
 
         $maxBoutiques = (int) $subscription->plan->max_boutiques;

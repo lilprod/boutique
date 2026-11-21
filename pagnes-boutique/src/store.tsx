@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartLine, Client, DB, ModePaiement, Parametres, Produit, Promotion, Proprietaire, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { ApiError, del, get, post, put, setUnauthorizedHandler, token } from './api';
+import { ApiError, del, get, post, put, setBoutiqueOuverte, setUnauthorizedHandler, token } from './api';
 import { fromClient, fromParametres, fromProduit, fromPromotion, fromProprietaire, fromUser, fromVente, toClient, toParametres, toProduit, toPromotion, toProprietaire, toUser, toVariante, toVente } from './lib/mappers';
 import { buildLignes, minimumNonAtteint, prixUnitaire, refusPoints, remisePoints, totaux, UNITES, vendAu } from './lib/calc';
 import { num, r2 } from './lib/format';
@@ -28,7 +28,8 @@ export interface App {
   notice: string | null;
   login: (identifiant: string, mdp: string) => Promise<Res>;
   logout: () => Promise<void>;
-  openBoutique: () => Promise<Res>;
+  /** Gérant : ouvre une boutique de son entreprise (sans identifiant : sa boutique de rattachement). */
+  openBoutique: (boutiqueId?: number) => Promise<Res>;
   returnToTenantPortal: () => void;
   /** `photo` : nouvelle photo à envoyer (`{ file }`) ou retrait de l'actuelle (`{ remove }`) ; absent = inchangée. `data.photoErreur` : produit enregistré mais photo refusée. */
   saveProduit: (p: Produit, vars: VarForm[], photo?: PhotoChange) => Promise<Res<{ photoErreur?: string }>>;
@@ -130,7 +131,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const clear = useCallback(() => { token.set(null); setUser(null); setData(EMPTY); setShopMode(false); }, []);
+  const clear = useCallback(() => { token.set(null); setBoutiqueOuverte(null); setUser(null); setData(EMPTY); setShopMode(false); }, []);
 
   /** Ouvre la session : charge tout, ou renvoie à la connexion si le chargement échoue. */
   const start = useCallback(async (u: User): Promise<Res> => {
@@ -146,9 +147,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [load, clear]);
 
-  const openBoutique = async (): Promise<Res> => {
+  const openBoutique = async (boutiqueId?: number): Promise<Res> => {
     if (userRef.current?.role !== 'tenant_admin') return fail('Action réservée à un administrateur tenant.');
 
+    setBoutiqueOuverte(boutiqueId ? String(boutiqueId) : null);
     shopModeRef.current = true;
     setShopMode(true);
     try {
@@ -157,12 +159,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       shopModeRef.current = false;
       setShopMode(false);
+      setBoutiqueOuverte(null);
       setData(EMPTY);
       return fail(e instanceof ApiError ? e.message : t('err.inattendue'));
     }
   };
 
   const returnToTenantPortal = () => {
+    setBoutiqueOuverte(null);
     shopModeRef.current = false;
     setShopMode(false);
     setData(EMPTY);
