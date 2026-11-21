@@ -18,14 +18,20 @@ Le frontend lit toutes ses données dans l'API, avec un jeton Bearer. Le navigat
 ## Organisation : plateforme, entreprises, boutiques
 
 - **Plateforme** : le super administrateur crée les entreprises clientes et les formules d'abonnement. Il encaisse les paiements (espèces, carte, T-Money, Flooz) et renouvelle abonnements et licences. Il n'appartient à aucune entreprise.
-- **Entreprise** (*tenant*) : elle a un abonnement, une licence et une ou plusieurs boutiques. Son gérant voit l'espace entreprise : abonnement, factures, justificatifs de paiement et clé de licence. Il y ajoute des boutiques, dans la limite de sa formule (`max_boutiques`), et ouvre celle de son choix pour y travailler.
+- **Entreprise** (*tenant*) : elle a un abonnement, une licence et une ou plusieurs boutiques. Son gérant voit l'espace entreprise : abonnement, factures, justificatifs de paiement et clé de licence. Il y ajoute des boutiques dans la limite de sa formule (`max_boutiques`), les modifie, les ferme ou les rouvre, et ouvre celle de son choix pour y travailler.
 - **Boutique** : toutes les données métier (produits, stock, ventes, clients, paramètres) appartiennent à une boutique et restent invisibles des autres boutiques et des autres entreprises.
 
 L'accès d'une entreprise est ouvert tant que son abonnement est valable :
 - un abonnement actif jusqu'à sa date de fin ;
 - un essai jusqu'à sa date de fin d'essai.
 
-Un abonnement annulé ou expiré ferme l'accès, même si la licence court encore, tout comme une licence suspendue. La formule limite le nombre de **comptes actifs** : désactiver un compte libère une place.
+Un abonnement annulé ou expiré ferme l'accès, même si la licence court encore, tout comme une licence suspendue. La formule limite le nombre de **comptes actifs** (désactiver un compte libère une place) et de **boutiques ouvertes**.
+
+**Fermer une boutique** :
+- Ses données sont conservées et elle peut être rouverte.
+- Ses comptes, hors gérants, sont déconnectés et ne peuvent plus se connecter, et l'API refuse toute requête sur cette boutique.
+- Sa place dans la formule est libérée ; la rouvrir en reprend une, dans la limite de la formule.
+- La dernière boutique ouverte d'une entreprise ne peut pas être fermée.
 
 ## Démarrage rapide
 
@@ -80,7 +86,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 131 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 135 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -148,7 +154,7 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 | Voir prix d'achat, marge, coûts | non | oui | oui | — |
 | Produits, entrées de stock, inventaire, promotions, propriétaires | non | oui | oui | — |
 | Annuler une vente, supprimer un client, ajuster des points | non | oui | oui | — |
-| Créer une boutique, ouvrir une autre boutique de l'entreprise | non | non | oui | — |
+| Créer, modifier, fermer ou rouvrir une boutique ; ouvrir une autre boutique de l'entreprise | non | non | oui | — |
 | Paramètres de la boutique | non | oui | oui | — |
 | Comptes de la boutique | non | vendeurs et admins de boutique | tous, y compris nommer un gérant | — |
 | Espace entreprise (abonnement, factures, clé de licence) | non | non | oui | — |
@@ -196,6 +202,8 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 Toutes ces routes commencent par `/api/tenant` :
 - `GET /dashboard`, `/boutiques`, `/subscription`, `/plans`, `/notifications` ;
 - `POST /boutiques` (`nom`, `adresse`, `telephone`) : ajoute une boutique avec ses paramètres, dans la limite de la formule (`422` au-delà) ;
+- `PUT /boutiques/{id}` : modifie nom, adresse et téléphone (les paramètres de la boutique suivent) ;
+- `POST /boutiques/{id}/fermer`, `POST /boutiques/{id}/rouvrir` ;
 - `GET /payments` (paginé), `/payments/{id}/invoice`, `/payments/{id}/attachment`.
 
 Le renouvellement et les paiements passent par le super admin.

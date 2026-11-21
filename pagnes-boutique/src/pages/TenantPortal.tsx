@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   LuArrowRight, LuBadgeCheck, LuCalendarClock, LuCircleAlert, LuFileText, LuKeyRound, LuLayers, LuMapPin,
-  LuPaperclip, LuPhone, LuPlus, LuShieldCheck, LuStore, LuUsers,
+  LuLock, LuPaperclip, LuPencil, LuPhone, LuPlus, LuRotateCcw, LuShieldCheck, LuStore, LuUsers,
 } from 'react-icons/lu';
-import { get, getBlob, post } from '../api';
+import { get, getBlob, post, put } from '../api';
 import { useApp } from '../store';
 import { t } from '../i18n';
 import { CountUp, Empty, Field, Modal, Skeleton, SkeletonRows, useUI } from '../components/ui';
@@ -101,7 +101,9 @@ export default function TenantPortal() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [nouvelleBoutique, setNouvelleBoutique] = useState(false);
+  // Formulaire boutique : 'new' pour en créer une, sinon la boutique à modifier.
+  const [boutiqueForm, setBoutiqueForm] = useState<TenantPortalData['boutiques'][number] | 'new' | null>(null);
+  const { toast, confirm } = useUI();
   const [recharge, setRecharge] = useState(0); // incrémenté pour relire le tableau de bord (nouvelle boutique)
 
   useEffect(() => {
@@ -158,6 +160,21 @@ export default function TenantPortal() {
     }
   };
 
+  /** Fermer : données gardées, comptes de la boutique déconnectés, place libérée dans la formule. */
+  const fermerBoutique = async (b: { id: number; nom: string }) => {
+    if (!(await confirm({ title: t('tp.fermerTitre', { nom: b.nom }), message: t('tp.fermerMsg'), confirmLabel: t('tp.fermer'), danger: true }))) return;
+    try {
+      await post(`/tenant/boutiques/${b.id}/fermer`);
+      toast(t('tp.boutiqueFermee', { nom: b.nom })); setRecharge(n => n + 1);
+    } catch (e: any) { toast(e?.message ?? t('tp.erreurBoutique'), 'err'); }
+  };
+  const rouvrirBoutique = async (b: { id: number; nom: string }) => {
+    try {
+      await post(`/tenant/boutiques/${b.id}/rouvrir`);
+      toast(t('tp.boutiqueRouverte', { nom: b.nom })); setRecharge(n => n + 1);
+    } catch (e: any) { toast(e?.message ?? t('tp.erreurBoutique'), 'err'); }
+  };
+
   /** Sans identifiant : la boutique de rattachement du gérant. */
   const enterBoutique = async (boutiqueId?: number) => {
     const result = await openBoutique(boutiqueId);
@@ -207,7 +224,9 @@ export default function TenantPortal() {
   const currentPlan = plans.find(p => String(p.id) === String(data.subscription?.plan?.id ?? '')) ?? data.subscription?.plan;
   const expiration = data.stats.license_expires_at ?? data.license?.expires_at;
   // Formule pleine : le bouton est bloqué ici, et l'API refuse de toute façon (422).
-  const limiteBoutiques = currentPlan?.max_boutiques != null && data.boutiques.length >= currentPlan.max_boutiques;
+  // Seules les boutiques ouvertes occupent une place : une boutique fermée libère la sienne.
+  const ouvertes = data.boutiques.filter(b => b.statut === 'active').length;
+  const limiteBoutiques = currentPlan?.max_boutiques != null && ouvertes >= currentPlan.max_boutiques;
   const joursRestants = expiration ? Math.ceil((new Date(expiration).getTime() - Date.now()) / 86_400_000) : null;
 
   return (
@@ -297,29 +316,43 @@ export default function TenantPortal() {
         <div className="panel-head">
           <div><h2>{t('tp.vosBoutiques')}</h2><p className="panel-sub">{t('tp.vosBoutiquesSous')}</p></div>
           <div className="row-actions">
-            <span className="badge info">{data.boutiques.length}{currentPlan?.max_boutiques != null ? ` / ${currentPlan.max_boutiques}` : ''}</span>
+            <span className="badge info" title={t('tp.boutiquesOuvertes')}>{ouvertes}{currentPlan?.max_boutiques != null ? ` / ${currentPlan.max_boutiques}` : ''}</span>
             <button className="btn btn-sm" type="button" disabled={limiteBoutiques} title={limiteBoutiques ? t('tp.limiteBoutiques') : undefined}
-              onClick={() => setNouvelleBoutique(true)}><LuPlus /> {t('tp.nouvelleBoutique')}</button>
+              onClick={() => setBoutiqueForm('new')}><LuPlus /> {t('tp.nouvelleBoutique')}</button>
           </div>
         </div>
         {limiteBoutiques && <p className="hint">{t('tp.limiteBoutiques')}</p>}
         {data.boutiques.length === 0 ? <Empty title={t('tp.aucuneBoutique')} /> : (
           <ul className="shop-grid">
             {data.boutiques.map((boutique, i) => (
-              <li key={boutique.id} className="shop-card" style={{ ['--i' as string]: i } as React.CSSProperties}>
-                <div className="shop-top"><span className="shop-mark" aria-hidden="true" /><strong className="grow ellipsis">{boutique.nom}</strong><StatusBadge status={boutique.statut} /></div>
+              <li key={boutique.id} className={cls('shop-card', boutique.statut !== 'active' && 'is-closed')} style={{ ['--i' as string]: i } as React.CSSProperties}>
+                <div className="shop-top"><span className="shop-mark" aria-hidden="true" /><strong className="grow ellipsis">{boutique.nom}</strong>
+                  {boutique.statut === 'active' ? <StatusBadge status={boutique.statut} /> : <span className="badge mute"><LuLock /> {t('tp.fermee')}</span>}</div>
                 <div className="muted-s shop-line"><LuMapPin /> {boutique.adresse ?? t('tp.adresseInconnue')}</div>
                 <div className="muted-s shop-line"><LuPhone /> {boutique.telephone ?? t('tp.telephoneInconnu')}</div>
-                {boutique.statut === 'active' && (
-                  <button className="btn btn-sm" type="button" onClick={() => void enterBoutique(boutique.id)}><LuStore /> {t('tp.ouvrir')} <LuArrowRight /></button>
-                )}
+                <div className="row-actions shop-actions">
+                  {boutique.statut === 'active' ? (
+                    <>
+                      <button className="btn btn-sm grow" type="button" onClick={() => void enterBoutique(boutique.id)}><LuStore /> {t('tp.ouvrir')} <LuArrowRight /></button>
+                      <button className="icon-btn" type="button" title={t('common.modifier')} aria-label={`${t('common.modifier')} · ${boutique.nom}`} onClick={() => setBoutiqueForm(boutique)}><LuPencil /></button>
+                      <button className="icon-btn danger" type="button" disabled={ouvertes <= 1} title={ouvertes <= 1 ? t('tp.derniereBoutique') : t('tp.fermer')}
+                        aria-label={`${t('tp.fermer')} · ${boutique.nom}`} onClick={() => void fermerBoutique(boutique)}><LuLock /></button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn btn-sm grow" type="button" disabled={limiteBoutiques} title={limiteBoutiques ? t('tp.limiteBoutiques') : undefined}
+                        onClick={() => void rouvrirBoutique(boutique)}><LuRotateCcw /> {t('tp.rouvrir')}</button>
+                      <button className="icon-btn" type="button" title={t('common.modifier')} aria-label={`${t('common.modifier')} · ${boutique.nom}`} onClick={() => setBoutiqueForm(boutique)}><LuPencil /></button>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      {nouvelleBoutique && <NouvelleBoutique onClose={() => setNouvelleBoutique(false)} onCreated={() => setRecharge(n => n + 1)} />}
+      {boutiqueForm && <BoutiqueForm boutique={boutiqueForm === 'new' ? undefined : boutiqueForm} onClose={() => setBoutiqueForm(null)} onSaved={() => setRecharge(n => n + 1)} />}
 
       <section className="panel">
         <div className="panel-head">
@@ -372,19 +405,28 @@ export default function TenantPortal() {
   );
 }
 
-/** Ajout d'une boutique par le gérant : elle reçoit ses propres paramètres, puis s'ouvre depuis sa carte. */
-function NouvelleBoutique({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+/**
+ * Création (elle reçoit ses propres paramètres, puis s'ouvre depuis sa carte) ou modification d'une
+ * boutique par le gérant ; à la modification, le nom sur les tickets et dans l'en-tête suit.
+ */
+function BoutiqueForm({ boutique, onClose, onSaved }: { boutique?: { id: number; nom: string; adresse?: string | null; telephone?: string | null }; onClose: () => void; onSaved: () => void }) {
   const { toast } = useUI();
-  const [f, setF] = useState({ nom: '', adresse: '', telephone: '' });
+  const [f, setF] = useState({ nom: boutique?.nom ?? '', adresse: boutique?.adresse ?? '', telephone: boutique?.telephone ?? '' });
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
     try {
-      await post('/tenant/boutiques', { nom: f.nom.trim(), adresse: f.adresse.trim() || null, telephone: f.telephone.trim() || null });
-      toast(t('tp.boutiqueCreee', { nom: f.nom.trim() }));
-      onCreated(); onClose();
+      const corps = { nom: f.nom.trim(), adresse: f.adresse.trim() || null, telephone: f.telephone.trim() || null };
+      if (boutique) {
+        await put(`/tenant/boutiques/${boutique.id}`, corps);
+        toast(t('tp.boutiqueModifiee', { nom: corps.nom }));
+      } else {
+        await post('/tenant/boutiques', corps);
+        toast(t('tp.boutiqueCreee', { nom: corps.nom }));
+      }
+      onSaved(); onClose();
     } catch (err: any) {
       toast(err?.message ?? t('tp.erreurBoutique'), 'err');
     } finally {
@@ -392,13 +434,13 @@ function NouvelleBoutique({ onClose, onCreated }: { onClose: () => void; onCreat
     }
   };
   return (
-    <Modal title={t('tp.nouvelleBoutique')} onClose={onClose} size="sm"
+    <Modal title={boutique ? t('tp.modifierBoutique') : t('tp.nouvelleBoutique')} onClose={onClose} size="sm"
       footer={<><button className="btn" type="button" onClick={onClose}>{t('common.annuler')}</button><button className="btn btn-primary" form="boutique-form" type="submit" disabled={busy}>{t('common.enregistrer')}</button></>}>
       <form id="boutique-form" className="form-col" onSubmit={submit}>
         <Field label={t('sa.f.nomBoutique')}><input className="input" value={f.nom} onChange={e => setF({ ...f, nom: e.target.value })} placeholder={t('sa.f.nomBoutiqueEx')} maxLength={150} required autoFocus /></Field>
         <Field label={t('clients.adresse')}><input className="input" value={f.adresse} onChange={e => setF({ ...f, adresse: e.target.value })} placeholder={t('sa.f.adresseEx')} maxLength={190} /></Field>
         <Field label={t('clients.telephone')}><input className="input" inputMode="tel" value={f.telephone} onChange={e => setF({ ...f, telephone: e.target.value })} placeholder="+228 90 00 00 00" maxLength={40} /></Field>
-        <p className="hint">{t('tp.nouvelleBoutiqueHint')}</p>
+        <p className="hint">{boutique ? t('tp.modifierBoutiqueHint') : t('tp.nouvelleBoutiqueHint')}</p>
       </form>
     </Modal>
   );

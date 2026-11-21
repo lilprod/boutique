@@ -42,7 +42,7 @@ Le serveur fait foi ; le frontend refait les contrôles de saisie pour répondre
 - **Mouvements de stock** : chaque entrée, vente, annulation et ajustement est journalisé (date, utilisateur, motif, fournisseur et prix d'achat pour les entrées).
 - **Session** : le jeton est conservé dans le `localStorage` et expire au bout de 12 h ; à l'expiration, ou si le compte est désactivé, l'application revient à la connexion.
 - **Vendeur** : ne voit que ses propres ventes, n'a pas accès aux paramètres ni à la liste des comptes.
-- **Gérant** : arrive sur l'espace entreprise (abonnement, factures, clé de licence). Il y ajoute des boutiques dans la limite de sa formule et ouvre celle de son choix ; l'application envoie alors l'en-tête `X-Boutique` à chaque requête, jusqu'au retour à l'espace entreprise. **Super admin** : arrive sur la console de la plateforme. Le détail des droits est dans le [README du dépôt](../README.md#rôles-et-droits).
+- **Gérant** : arrive sur l'espace entreprise (abonnement, factures, clé de licence). Il y ajoute des boutiques dans la limite de sa formule, les modifie, les ferme ou les rouvre, et ouvre celle de son choix ; l'application envoie alors l'en-tête `X-Boutique` à chaque requête, jusqu'au retour à l'espace entreprise. **Super admin** : arrive sur la console de la plateforme. Le détail des droits est dans le [README du dépôt](../README.md#rôles-et-droits).
 
 ## Architecture
 

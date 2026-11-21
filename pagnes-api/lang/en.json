@@ -97,5 +97,10 @@
     "Le mot de passe du gérant doit contenir au moins 8 caractères.": "The manager's password must be at least 8 characters long.",
     "Cette boutique n’appartient pas à votre entreprise.": "This shop does not belong to your company.",
     "Le nom de la boutique est obligatoire.": "The shop name is required.",
-    "Limite de boutiques atteinte pour votre offre. Changez d'offre pour en ajouter.": "Your plan's shop limit has been reached. Change plan to add one."
+    "Limite de boutiques atteinte pour votre offre. Changez d'offre pour en ajouter.": "Your plan's shop limit has been reached. Change plan to add one.",
+    "Cette boutique est fermée.": "This shop is closed.",
+    "Votre boutique est fermée. Adressez-vous à votre gérant.": "Your shop is closed. Please contact your manager.",
+    "Cette boutique est déjà fermée.": "This shop is already closed.",
+    "Cette boutique est déjà ouverte.": "This shop is already open.",
+    "Impossible de fermer la dernière boutique ouverte de l'entreprise.": "The company's last open shop cannot be closed."
 }

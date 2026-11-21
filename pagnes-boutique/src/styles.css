@@ -789,6 +789,11 @@ input[type="file"].input { padding: 7px var(--s-2); }
 @media (prefers-reduced-motion: reduce) { .owner-card, .owner-bar span { animation: none; } }
 .shop-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-3); }
 .shop-card { display: flex; flex-direction: column; gap: 6px; padding: var(--s-3) var(--s-4) 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); animation: tile-in var(--d-3) var(--ease) both; animation-delay: calc(var(--i, 0) * 40ms); }
+.shop-actions { margin-top: 6px; flex-wrap: nowrap; }
+.shop-actions .btn.grow { flex: 1; justify-content: center; }
+/* Boutique fermée : carte en retrait, son nom reste lisible. */
+.shop-card.is-closed { background: var(--surface-2); border-style: dashed; }
+.shop-card.is-closed .shop-mark { filter: grayscale(1); opacity: 0.6; }
 .shop-top { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; min-width: 0; }
 .shop-mark { width: 28px; height: 28px; flex: none; border-radius: 8px; background: var(--wax); background-size: 28px 28px; }
 .shop-line { display: flex; align-items: center; gap: 6px; }

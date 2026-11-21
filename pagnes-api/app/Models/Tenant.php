@@ -115,7 +115,8 @@ class Tenant extends Model
         }
 
         $maxBoutiques = (int) $subscription->plan->max_boutiques;
-        $current = $this->boutiques()->count();
+        // Une boutique fermée libère sa place ; la rouvrir en reprend une.
+        $current = $this->boutiques()->where('statut', 'active')->count();
 
         return $current < $maxBoutiques;
     }

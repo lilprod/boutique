@@ -29,6 +29,9 @@ Route::middleware(['auth:sanctum', 'actif', 'choisir_boutique'])->group(function
         Route::get('/notifications', [TenantPortalController::class, 'notifications']);
         Route::get('/boutiques', [TenantPortalController::class, 'boutiques']);
         Route::post('/boutiques', [TenantPortalController::class, 'storeBoutique']);
+        Route::put('/boutiques/{boutiqueId}', [TenantPortalController::class, 'updateBoutique'])->whereNumber('boutiqueId');
+        Route::post('/boutiques/{boutiqueId}/fermer', [TenantPortalController::class, 'fermerBoutique'])->whereNumber('boutiqueId');
+        Route::post('/boutiques/{boutiqueId}/rouvrir', [TenantPortalController::class, 'rouvrirBoutique'])->whereNumber('boutiqueId');
         Route::get('/subscription', [TenantPortalController::class, 'subscription']);
         Route::get('/payments', [TenantPortalController::class, 'payments']);
         Route::get('/payments/{paymentId}/invoice', [TenantPortalController::class, 'invoice']);

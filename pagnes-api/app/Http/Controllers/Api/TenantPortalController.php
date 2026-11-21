@@ -8,6 +8,7 @@ use App\Models\Parametre;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,7 +48,7 @@ class TenantPortalController extends Controller
             'tenant' => $tenant,
             'boutiques' => $boutiques,
             'boutique_access' => $user->boutique_id !== null
-                && $boutiques->contains('id', $user->boutique_id),
+                && $boutiques->contains(fn (Boutique $b) => $b->id === $user->boutique_id && $b->statut === 'active'),
             'subscription' => $subscription,
             'license' => $license,
             'stats' => $stats,
@@ -113,6 +114,86 @@ class TenantPortalController extends Controller
         });
 
         return response()->json($boutique, 201);
+    }
+
+    /**
+     * Le gérant corrige le nom, l'adresse ou le téléphone d'une boutique. Ses paramètres suivent :
+     * le nom affiché sur les tickets et dans l'en-tête de l'application reste celui de la boutique.
+     */
+    public function updateBoutique(Request $request, int $boutiqueId)
+    {
+        $boutique = $this->boutiqueDeLEntreprise($request, $boutiqueId);
+        $data = $request->validate([
+            'nom' => 'required|string|max:150',
+            'adresse' => 'nullable|string|max:190',
+            'telephone' => 'nullable|string|max:40',
+        ], [
+            'nom.required' => __('Le nom de la boutique est obligatoire.'),
+        ]);
+        $valeurs = ['nom' => trim($data['nom']), 'adresse' => $data['adresse'] ?? null, 'telephone' => $data['telephone'] ?? null];
+
+        DB::transaction(function () use ($boutique, $valeurs) {
+            $boutique->update($valeurs);
+            Parametre::where('tenant_id', $boutique->tenant_id)->where('boutique_id', $boutique->id)
+                ->update(['boutique' => $valeurs['nom'], 'adresse' => $valeurs['adresse'], 'telephone' => $valeurs['telephone']]);
+        });
+
+        return response()->json($boutique->fresh());
+    }
+
+    /**
+     * Ferme une boutique : ses données sont conservées, mais plus personne n'y travaille.
+     * Ses comptes (hors gérants) sont déconnectés et ne peuvent plus se connecter ; sa place
+     * dans la formule est libérée. La dernière boutique active de l'entreprise ne se ferme pas.
+     */
+    public function fermerBoutique(Request $request, int $boutiqueId)
+    {
+        $boutique = DB::transaction(function () use ($request, $boutiqueId) {
+            Tenant::whereKey($request->user()->tenant_id)->lockForUpdate()->firstOrFail();
+            $boutique = $this->boutiqueDeLEntreprise($request, $boutiqueId);
+            if ($boutique->statut !== 'active') {
+                abort(422, __('Cette boutique est déjà fermée.'));
+            }
+            $autresActives = Boutique::where('tenant_id', $boutique->tenant_id)->where('statut', 'active')->whereKeyNot($boutique->id)->exists();
+            if (! $autresActives) {
+                abort(422, __('Impossible de fermer la dernière boutique ouverte de l\'entreprise.'));
+            }
+
+            $boutique->update(['statut' => 'inactive']);
+            // Sessions coupées tout de suite ; les gérants (admin, tenant_admin) gardent leur espace entreprise.
+            $comptes = $boutique->users()->whereNotIn('role', ['admin', 'tenant_admin'])->pluck('id');
+            DB::table('personal_access_tokens')->where('tokenable_type', User::class)->whereIn('tokenable_id', $comptes)->delete();
+
+            return $boutique;
+        });
+
+        return response()->json($boutique->fresh());
+    }
+
+    /** Rouvre une boutique fermée : elle reprend une place dans la formule (refus au-delà de la limite). */
+    public function rouvrirBoutique(Request $request, int $boutiqueId)
+    {
+        $boutique = DB::transaction(function () use ($request, $boutiqueId) {
+            $tenant = Tenant::whereKey($request->user()->tenant_id)->lockForUpdate()->firstOrFail();
+            $boutique = $this->boutiqueDeLEntreprise($request, $boutiqueId);
+            if ($boutique->statut === 'active') {
+                abort(422, __('Cette boutique est déjà ouverte.'));
+            }
+            if (! $tenant->canAddBoutique()) {
+                abort(422, __('Limite de boutiques atteinte pour votre offre. Changez d\'offre pour en ajouter.'));
+            }
+            $boutique->update(['statut' => 'active']);
+
+            return $boutique;
+        });
+
+        return response()->json($boutique->fresh());
+    }
+
+    /** Boutique de l'entreprise du gérant ; une boutique d'une autre entreprise est introuvable (404). */
+    private function boutiqueDeLEntreprise(Request $request, int $boutiqueId): Boutique
+    {
+        return Boutique::where('tenant_id', $request->user()->tenant_id)->findOrFail($boutiqueId);
     }
 
     public function subscription(Request $request)

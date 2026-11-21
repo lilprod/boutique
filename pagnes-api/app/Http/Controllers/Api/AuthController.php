@@ -19,6 +19,11 @@ class AuthController extends Controller
         if (!$user || !$user->actif || !Hash::check($data['mot_de_passe'], $user->password)) {
             throw ValidationException::withMessages(['identifiant' => __('Identifiant ou mot de passe incorrect.')]);
         }
+        // Compte d'une boutique fermée : pas de connexion (le gérant, lui, garde son espace entreprise).
+        if (! $user->is_super_admin && ! $user->isTenantAdmin() && $user->boutique_id
+            && $user->boutique()->where('statut', 'active')->doesntExist()) {
+            throw ValidationException::withMessages(['identifiant' => __('Votre boutique est fermée. Adressez-vous à votre gérant.')]);
+        }
 
         return response()->json([
             'user' => $user->only(['id', 'nom', 'role']),

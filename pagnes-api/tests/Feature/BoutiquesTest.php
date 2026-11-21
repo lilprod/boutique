@@ -133,4 +133,90 @@ class BoutiquesTest extends TestCase
                 ->assertJsonCount(1)->assertJsonPath('0.nom', 'Wax principale');
         }
     }
+
+    // Modification et fermeture
+
+    public function test_le_gerant_modifie_une_boutique_et_ses_parametres_suivent(): void
+    {
+        $c = $this->entreprise();
+        Parametre::actuel($c['vendeur']); // paramètres de la boutique principale
+        Sanctum::actingAs($c['gerant']);
+
+        $this->putJson('/api/tenant/boutiques/'.$c['boutique']->id, ['nom' => 'Pagnes du Grand Marché', 'adresse' => 'Grand Marché', 'telephone' => '+228 90 11 22 33'])
+            ->assertOk()->assertJsonPath('nom', 'Pagnes du Grand Marché');
+        $p = Parametre::where('boutique_id', $c['boutique']->id)->firstOrFail();
+        $this->assertSame(['Pagnes du Grand Marché', 'Grand Marché', '+228 90 11 22 33'], [$p->boutique, $p->adresse, $p->telephone]);
+
+        $autre = $this->entreprise();
+        $this->putJson('/api/tenant/boutiques/'.$autre['boutique']->id, ['nom' => 'Pirate'])->assertNotFound();
+        $this->putJson('/api/tenant/boutiques/'.$c['boutique']->id, ['nom' => ''])->assertStatus(422);
+
+        Sanctum::actingAs($c['badmin']);
+        $this->putJson('/api/tenant/boutiques/'.$c['boutique']->id, ['nom' => 'X'])->assertForbidden();
+    }
+
+    public function test_fermer_une_boutique_coupe_ses_comptes_et_libere_sa_place(): void
+    {
+        $c = $this->entreprise(2);
+        Sanctum::actingAs($c['gerant']);
+        $be = $this->postJson('/api/tenant/boutiques', ['nom' => 'Pagnes Bè'])->json('id');
+        $this->postJson('/api/tenant/boutiques', ['nom' => 'Une de trop'])->assertStatus(422);
+
+        // Un vendeur de la boutique principale, connecté avec un vrai jeton.
+        $jeton = $c['vendeur']->createToken('caisse')->plainTextToken;
+
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/fermer')->assertOk()->assertJsonPath('statut', 'inactive');
+        $this->assertSame(0, $c['vendeur']->tokens()->count());   // déconnecté
+        $this->assertSame(0, $c['badmin']->tokens()->count());
+        $this->assertNotNull($c['gerant']->fresh());                // le gérant garde son compte et son espace
+
+        // Il ne peut plus se reconnecter.
+        $this->app['auth']->forgetGuards();
+        $this->postJson('/api/login', ['identifiant' => $c['vendeur']->email, 'mot_de_passe' => 'password'])
+            ->assertStatus(422)->assertJsonValidationErrors('identifiant');
+
+        // Même avec un jeton encore valable (session ouverte ailleurs), plus aucune requête sur cette boutique.
+        Sanctum::actingAs($c['vendeur']);
+        $this->getJson('/api/produits')->assertForbidden();
+        Sanctum::actingAs($c['gerant']);
+        $this->getJson('/api/produits')->assertForbidden();                                  // sa boutique de rattachement est fermée
+        $this->getJson('/api/produits', ['X-Boutique' => (string) $c['boutique']->id])->assertForbidden();
+        $this->getJson('/api/produits', ['X-Boutique' => (string) $be])->assertOk();        // l'autre boutique reste ouverte
+        // Compte relu comme à chaque vraie requête (X-Boutique ne change la boutique qu'en mémoire, le temps d'une requête).
+        Sanctum::actingAs($c['gerant']->fresh());
+        $this->getJson('/api/tenant/dashboard')->assertOk()->assertJsonPath('boutique_access', false);
+
+        // Sa place est libérée : une autre boutique peut être créée…
+        $troisieme = $this->postJson('/api/tenant/boutiques', ['nom' => 'Pagnes Agoè'])->assertCreated()->json('id');
+        // …et la rouvrir dépasserait la formule.
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/rouvrir')->assertStatus(422);
+        $this->postJson('/api/tenant/boutiques/'.$troisieme.'/fermer')->assertOk();
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/rouvrir')->assertOk()->assertJsonPath('statut', 'active');
+
+        Sanctum::actingAs($c['gerant']->fresh());
+        $this->getJson('/api/produits')->assertOk();
+        $this->assertSame($c['boutique']->id, $c['gerant']->fresh()->boutique_id);
+    }
+
+    public function test_la_derniere_boutique_ouverte_ne_se_ferme_pas(): void
+    {
+        $c = $this->entreprise();
+        Sanctum::actingAs($c['gerant']);
+
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/fermer')->assertStatus(422);
+        $this->assertSame('active', $c['boutique']->fresh()->statut);
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/rouvrir')->assertStatus(422); // déjà ouverte
+    }
+
+    public function test_seul_le_gerant_ferme_une_boutique_de_son_entreprise(): void
+    {
+        $c = $this->entreprise();
+        $autre = $this->entreprise();
+        Sanctum::actingAs($c['badmin']);
+        $this->postJson('/api/tenant/boutiques/'.$c['boutique']->id.'/fermer')->assertForbidden();
+
+        Sanctum::actingAs($c['gerant']);
+        $this->postJson('/api/tenant/boutiques/'.$autre['boutique']->id.'/fermer')->assertNotFound();
+        $this->assertSame('active', $autre['boutique']->fresh()->statut);
+    }
 }
