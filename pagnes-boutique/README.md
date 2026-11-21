@@ -69,7 +69,7 @@ Le chargement à la connexion ne dépend pas de la taille de l'historique : les 
 ## Écarts par rapport au cahier des charges
 
 - **CSS sur mesure au lieu de Tailwind**, **graphiques SVG maison au lieu de Recharts**, **routeur par hash au lieu de React Router**, **Context au lieu de Zustand** : moins de dépendances, application plus légère, mêmes fonctions.
-- **PWA** : le service worker met en cache l'application (pas les données de l'API) et n'est actif que si elle est servie en HTTPS depuis son propre domaine. La caisse nécessite le réseau.
+- **PWA** : le service worker met en cache l'application (page, JS, CSS), jamais les réponses de l'API. Il n'est actif que si l'application est servie en HTTPS depuis son propre domaine. La **caisse hors ligne** (`src/lib/horsLigne.ts`) garde elle-même le catalogue, sans prix d'achat, et la file des ventes à envoyer : voir le README du dépôt.
 - **Le fichier unique** `build-single.mjs` (`dist-single/index.html`, ouvert sans serveur) ne convient plus : sans API, il n'affiche que l'écran de connexion.
 
 ## Limites connues

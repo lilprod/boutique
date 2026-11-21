@@ -26,6 +26,11 @@ export const setUnauthorizedHandler = (fn: () => void) => { onUnauthorized = fn;
  */
 let boutiqueOuverte: string | null = null;
 export const setBoutiqueOuverte = (id: string | null) => { boutiqueOuverte = id; };
+export const getBoutiqueOuverte = () => boutiqueOuverte;
+
+/** Prévenu à chaque réponse (true) ou échec réseau (false) : c'est ainsi que l'application sait qu'elle est hors ligne. */
+let onConnexion: (ok: boolean) => void = () => {};
+export const setConnexionHandler = (fn: (ok: boolean) => void) => { onConnexion = fn; };
 const enTetesCommuns = (accept: string): Record<string, string> => {
   // X-Langue : l'API répond dans la langue choisie dans l'application (messages d'erreur, notifications).
   const headers: Record<string, string> = { Accept: accept, 'X-Langue': langue() };
@@ -56,8 +61,10 @@ export async function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   try {
     res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body) });
   } catch {
+    onConnexion(false);
     throw new ApiError(t('api.injoignable'), 0);
   }
+  onConnexion(true);
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (!res.ok) {

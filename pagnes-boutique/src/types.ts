@@ -47,7 +47,14 @@ export interface Vente {
   paiement: { mode: ModePaiement; reference?: string; recu?: number };
   statut: 'validee' | 'annulee';
   annulation?: { date: string; userId: string; motif: string };
+  /**
+   * Caisse hors ligne : vente encaissée sans réseau. Tant qu'elle n'est pas envoyée, `numero` vaut 0 et `uuid`
+   * sert de référence provisoire. À la réception, le serveur note ce qui a changé entre-temps (`anomalies`).
+   */
+  horsLigne?: boolean; uuid?: string; totalEncaisse?: number; anomalies?: Anomalie[];
 }
+/** Écart constaté par le serveur à la réception d'une vente hors ligne. */
+export interface Anomalie { type: 'stock' | 'ecart' | 'remise' | 'unite' | 'minimum'; produit?: string; coloris?: string; manque?: number; unite?: 'pagne' | 'yard' | 'metre'; encaisse?: number; calcule?: number; pct?: number; max?: number }
 
 export type TypeMouvement = 'entree' | 'vente' | 'annulation' | 'ajustement';
 export interface Mouvement {

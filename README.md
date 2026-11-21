@@ -86,7 +86,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 135 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 140 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -144,6 +144,31 @@ Elles vivent dans `pagnes-api/app/Services/` : c'est le serveur qui fait foi. Le
 - **Concurrence** : ventes et annulations verrouillent les lignes concernées dans une transaction (`lockForUpdate`). Cela évite de vendre deux fois le dernier mètre, d'attribuer deux fois le même numéro de vente ou de dépenser deux fois les mêmes points.
 - **Historique** : chaque entrée, vente, annulation et ajustement est journalisé. Un produit déjà vendu ne peut pas être supprimé.
 
+### Caisse hors ligne
+
+Quand le serveur ne répond plus, la caisse continue de vendre.
+
+- **Sur la tablette** :
+  - Le catalogue de la boutique est gardé à chaque chargement : produits, coloris et stock, paramètres, promotions, **sans prix d'achat ni marge**.
+  - Les clients, les ventes et les comptes ne sont pas gardés.
+  - Une déconnexion volontaire efface le catalogue.
+  - Si la page est rechargée sans réseau, l'application repart de ce catalogue.
+- **Pendant la coupure** :
+  - La vente est gardée sur la tablette avec un identifiant (`uuid`), un ticket provisoire (`HL-XXXXXXXX`) et la baisse du stock affiché.
+  - Les points de fidélité ne s'utilisent pas, et on ne crée pas de client.
+  - Un bandeau indique l'état hors ligne et le nombre de ventes en attente.
+- **Au retour du réseau** :
+  - Les ventes partent automatiquement, puis toutes les 30 s tant qu'il en reste. Elles restent sur la tablette même après une déconnexion, et partent au retour du même vendeur.
+  - Renvoyer une vente ne crée jamais de doublon (même `uuid`).
+- **Réception par le serveur** :
+  - La vente reçoit son numéro et garde son heure réelle.
+  - Le serveur applique les promotions du jour de la vente et les prix actuels des articles, faute d'historique des prix.
+  - Ce qui a changé entre-temps ne bloque pas la vente : stock insuffisant (le stock peut passer en négatif), unité plus autorisée, minimum, plafond de remise, écart entre le montant encaissé et le montant recalculé. Ces écarts sont enregistrés comme **anomalies**.
+  - L'administrateur en est prévenu par la cloche, et les ventes concernées portent les badges « Hors ligne » et « À vérifier ».
+- **Refus** :
+  - Le serveur refuse une vente de plus de 30 jours, une vente avec des points, ou une vente dont l'article ou le client a été supprimé.
+  - Elle reste alors dans le bandeau avec le motif, et le vendeur la retire une fois régularisée.
+
 ### Rôles et droits
 
 | Action | Vendeur | Admin de boutique | Gérant | Super admin |
@@ -189,7 +214,7 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 | Produits | `GET /api/produits` (chaque produit porte `image_url`) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/image` (multipart, champ `image`), `DELETE /{id}/image` |
 | Stock | `GET /api/mouvements` (`?type=`, `?variante_id=`) ; admin : `POST /api/variantes/{id}/entree`, `POST /api/variantes/{id}/ajuster`, `GET /api/fournisseurs` |
 | Clients | `GET /api/clients` (paginé, `?q=` : nom, téléphone, y compris sans les espaces, adresse), `GET /api/clients/{id}` (fiche et statistiques), `POST /api/clients`, `PUT /api/clients/{id}`, `GET /api/clients/{id}/points` ; admin : `DELETE /{id}`, `POST /{id}/points` (ajustement avec motif). La liste inclut `achats`, `depense` et `derniere_vente` (ventes validées) |
-| Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` ; admin : `POST /api/ventes/{id}/annuler` |
+| Ventes | `GET /api/ventes` (`?q=`, `?statut=`, `?du=`, `?au=`), `GET /api/ventes/{id}`, `POST /api/ventes` (`uuid` facultatif : un renvoi répond `200` avec la vente déjà reçue ; `hors_ligne: { vendue_le, total }` pour une vente faite sans réseau) ; admin : `POST /api/ventes/{id}/annuler` |
 | Promotions | `GET /api/promotions` (en cours pour un vendeur, toutes pour l'admin) ; admin : `POST`, `PUT /{id}`, `DELETE /{id}` |
 | Propriétaires | `GET /api/proprietaires` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /api/rapports/proprietaires` (`?du=`, `?au=`) |
 | Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
@@ -265,5 +290,4 @@ pagnes-api/                     API Laravel
 À faire, par ordre de priorité :
 
 1. **Base de données** : contrainte `CHECK (stock >= 0)` (MySQL 8.0.16 ou plus).
-2. **Hors ligne** : le service worker ne met en cache que l'application, pas les données, volontairement, car elles sont confidentielles. La caisse ne fonctionne donc pas sans réseau.
-3. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.
+2. **Phase 2 métier** : crédit et acomptes clients, fournisseurs et bons de commande, retours partiels, rapports et exports.

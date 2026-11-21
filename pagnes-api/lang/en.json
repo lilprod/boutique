@@ -102,5 +102,9 @@
     "Votre boutique est fermée. Adressez-vous à votre gérant.": "Your shop is closed. Please contact your manager.",
     "Cette boutique est déjà fermée.": "This shop is already closed.",
     "Cette boutique est déjà ouverte.": "This shop is already open.",
-    "Impossible de fermer la dernière boutique ouverte de l'entreprise.": "The company's last open shop cannot be closed."
+    "Impossible de fermer la dernière boutique ouverte de l'entreprise.": "The company's last open shop cannot be closed.",
+    "Vente hors ligne de plus de 30 jours : à saisir à la main par l’administrateur.": "Offline sale older than 30 days: it must be entered manually by the administrator.",
+    "Les points de fidélité ne s’utilisent pas hors ligne.": "Loyalty points cannot be redeemed offline.",
+    "Ventes hors ligne à vérifier": "Offline sales to check",
+    ":n vente(s) encaissée(s) sans réseau ont été reçues avec un écart (stock, montant ou remise).": ":n sale(s) taken without network were received with a discrepancy (stock, amount or discount)."
 }

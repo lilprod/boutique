@@ -25,9 +25,31 @@ class VenteService
      * @param  array  $cart  [['variante_id' => int, 'unite' => 'pagne'|'yard'|'metre', 'quantite' => float, 'remise_type' => 'pct'|'fcfa', 'remise_valeur' => float], ...]
      * @param  array  $paiement  ['mode' => string, 'reference' => ?string, 'recu' => ?int]
      * @param  int  $pointsUtilises  points de fidélité du client échangés contre une remise
+     * @param  array{vendue_le: \DateTimeInterface, total: int}|null  $horsLigne  vente encaissée sans réseau, envoyée plus tard
+     *         par la tablette : heure réelle de la vente et montant encaissé. Les règles qui ont pu changer depuis (stock,
+     *         unités autorisées, minimum, plafond de remise) ne bloquent plus : elles deviennent des anomalies signalées.
+     * @param  string|null  $uuid  identifiant choisi par la tablette : un second envoi renvoie la vente déjà enregistrée
      */
-    public function valider(User $vendeur, array $cart, ?int $clientId, string $remiseType, float $remiseValeur, array $paiement, int $pointsUtilises = 0): Vente
+    public function valider(User $vendeur, array $cart, ?int $clientId, string $remiseType, float $remiseValeur, array $paiement, int $pointsUtilises = 0, ?array $horsLigne = null, ?string $uuid = null): Vente
     {
+        if ($uuid !== null && ($deja = Vente::query()->forCurrentContext($vendeur)->where('uuid', $uuid)->first())) {
+            return $deja->load('lignes', 'client', 'vendeur:id,nom');
+        }
+        $venduLe = null;
+        if ($horsLigne !== null) {
+            $venduLe = \Illuminate\Support\Carbon::instance($horsLigne['vendue_le']);
+            if ($venduLe->isFuture()) {
+                $venduLe = now(); // horloge de la tablette en avance
+            }
+            if ($venduLe->lessThan(now()->subDays(30))) {
+                throw new RegleMetierException('Vente hors ligne de plus de 30 jours : à saisir à la main par l’administrateur.');
+            }
+            if ($pointsUtilises > 0) {
+                throw new RegleMetierException('Les points de fidélité ne s’utilisent pas hors ligne.');
+            }
+        }
+        $anomalies = [];
+
         if (count($cart) === 0) {
             throw new RegleMetierException('Le panier est vide.');
         }
@@ -48,7 +70,7 @@ class VenteService
             });
         }
 
-        return DB::transaction(function () use ($vendeur, $cart, $clientId, $remiseType, $remiseValeur, $paiement, $pointsUtilises) {
+        return DB::transaction(function () use ($vendeur, $cart, $clientId, $remiseType, $remiseValeur, $paiement, $pointsUtilises, $horsLigne, $uuid, $venduLe, &$anomalies) {
             // Verrou d'exclusion sur la ligne unique des paramètres : sérialise les ventes pour que
             // deux caisses n'obtiennent jamais le même numéro. Ordre fixe des verrous pour éviter les
             // interblocages : paramètres, puis client, puis stock (annuler() suit le même ordre).
@@ -100,11 +122,13 @@ class VenteService
                 $produit = $variante->produit;
                 $unite = $l['unite'];
                 $libelle = Produit::libelleUnite($unite);
-                if (! $parametres->autorise($unite)) {
-                    throw new RegleMetierException('La vente au :unite n’est pas autorisée dans cette boutique.', ['unite' => $libelle]);
-                }
-                if (! $produit->vendAu($unite)) {
-                    throw new RegleMetierException('« :produit » ne se vend pas au :unite.', ['produit' => $produit->nom, 'unite' => $libelle]);
+                if (! $parametres->autorise($unite) || ! $produit->vendAu($unite)) {
+                    if ($horsLigne === null) {
+                        throw $parametres->autorise($unite)
+                            ? new RegleMetierException('« :produit » ne se vend pas au :unite.', ['produit' => $produit->nom, 'unite' => $libelle])
+                            : new RegleMetierException('La vente au :unite n’est pas autorisée dans cette boutique.', ['unite' => $libelle]);
+                    }
+                    $anomalies[] = ['type' => 'unite', 'produit' => $produit->nom, 'unite' => $unite];
                 }
                 $prixUnitaire = $produit->prixPour($unite);
                 $brut = (int) round($l['quantite'] * $prixUnitaire);
@@ -119,7 +143,7 @@ class VenteService
             }
 
             // Promotion d'abord (la plus avantageuse par ligne), puis la remise manuelle sur ce qui reste.
-            $promos = $this->meilleuresPromotions($vendeur, $lignes);
+            $promos = $this->meilleuresPromotions($vendeur, $lignes, $venduLe);
             $promoTotal = 0;
             foreach ($lignes as $i => &$x) {
                 $promo = $promos[$i] ?? null;
@@ -136,7 +160,9 @@ class VenteService
             // Toutes les lignes sont forcément au pagne ici : la somme des quantités a un sens.
             if ($parametres->vendUniquementAuPagne()) {
                 $quantiteTotale = array_sum(array_map(fn ($l) => (float) $l['quantite'], $cart));
-                if ($quantiteTotale + 0.001 < $parametres->quantite_min_panier) {
+                if ($quantiteTotale + 0.001 < $parametres->quantite_min_panier && $horsLigne !== null) {
+                    $anomalies[] = ['type' => 'minimum', 'quantite' => $quantiteTotale, 'minimum' => $parametres->quantite_min_panier];
+                } elseif ($quantiteTotale + 0.001 < $parametres->quantite_min_panier) {
                     throw new RegleMetierException('Quantité minimale par vente : :n pagne(s).', [
                         'n' => rtrim(rtrim(number_format($parametres->quantite_min_panier, 2, ',', ''), '0'), ','),
                     ]);
@@ -145,7 +171,13 @@ class VenteService
 
             foreach ($besoins as $varianteId => $quantite) {
                 $variante = $variantes->get($varianteId);
-                if (round($quantite, 2) > (float) $variante->stock) {
+                if (round($quantite, 2) > (float) $variante->stock && $horsLigne !== null) {
+                    // La vente a eu lieu : elle est enregistrée, le stock passe en négatif, l'administrateur est prévenu.
+                    $anomalies[] = [
+                        'type' => 'stock', 'produit' => $variante->produit->nom, 'coloris' => $variante->coloris,
+                        'manque' => round($quantite - (float) $variante->stock, 2), 'unite' => $uniteStock,
+                    ];
+                } elseif (round($quantite, 2) > (float) $variante->stock) {
                     throw new RegleMetierException('Stock insuffisant pour :produit — :coloris : :stock :unite(s) disponible(s).', [
                         'produit' => $variante->produit->nom, 'coloris' => $variante->coloris, 'stock' => $variante->stock, 'unite' => Produit::libelleUnite($uniteStock),
                     ]);
@@ -159,7 +191,9 @@ class VenteService
             $basePlafond = $brutTotal - $promoTotal;
             $remiseEffPct = $basePlafond > 0 ? (($basePlafond - $total) / $basePlafond) * 100 : 0;
 
-            if (! $vendeur->estAdmin() && $remiseEffPct > $parametres->remise_max_vendeur + 0.001) {
+            if (! $vendeur->estAdmin() && $remiseEffPct > $parametres->remise_max_vendeur + 0.001 && $horsLigne !== null) {
+                $anomalies[] = ['type' => 'remise', 'pct' => round($remiseEffPct, 1), 'max' => $parametres->remise_max_vendeur];
+            } elseif (! $vendeur->estAdmin() && $remiseEffPct > $parametres->remise_max_vendeur + 0.001) {
                 throw new RegleMetierException('Remise trop élevée : au-delà de :max %, un administrateur est requis.', ['max' => $parametres->remise_max_vendeur]);
             }
 
@@ -178,8 +212,13 @@ class VenteService
                 throw new RegleMetierException('La référence de la transaction est obligatoire pour le mobile money.');
             }
             $recu = $paiement['recu'] ?? null;
-            if ($mode === 'especes' && $recu && $recu > 0 && $recu < $total) {
+            // Hors ligne, le montant reçu a été contrôlé par la tablette sur son propre total : un écart est signalé plus bas.
+            if ($horsLigne === null && $mode === 'especes' && $recu && $recu > 0 && $recu < $total) {
                 throw new RegleMetierException('Le montant reçu est inférieur au total.');
+            }
+
+            if ($horsLigne !== null && (int) $horsLigne['total'] !== $total) {
+                $anomalies[] = ['type' => 'ecart', 'encaisse' => (int) $horsLigne['total'], 'calcule' => $total];
             }
 
             $numero = (int) (Vente::where('tenant_id', $vendeur->tenant_id)->where('boutique_id', $vendeur->boutique_id)->max('numero') ?? 0) + 1;
@@ -203,7 +242,16 @@ class VenteService
                 'paiement_reference' => $mode === 'flooz' || $mode === 'tmoney' ? trim($paiement['reference']) : null,
                 'paiement_recu' => $mode === 'especes' && $recu > 0 ? $recu : null,
                 'statut' => 'validee',
+                'uuid' => $uuid,
+                'hors_ligne' => $horsLigne !== null,
+                'total_encaisse' => $horsLigne !== null ? (int) $horsLigne['total'] : null,
+                'anomalies' => $anomalies ?: null,
+                'synchronisee_le' => $horsLigne !== null ? now() : null,
             ]);
+            if ($venduLe !== null) {
+                // L'historique (tableau de bord, journal) garde l'heure réelle de la vente, pas celle de l'envoi.
+                $vente->forceFill(['created_at' => $venduLe])->save();
+            }
 
             // Remise globale et remise en points sont réparties sur les lignes : `net` est ce qui a été encaissé pour chacune.
             $nets = self::repartirRemise(array_column($lignes, 'total'), $remiseGlobale + $remisePoints);
@@ -232,12 +280,15 @@ class VenteService
                     'net' => $nets[$i],
                     'cout' => $x['cout'],
                 ]);
-                Mouvement::create([
+                $mouvement = Mouvement::create([
                     'tenant_id' => $vendeur->tenant_id,
                     'boutique_id' => $vendeur->boutique_id,
                     'variante_id' => $x['variante']->id, 'type' => 'vente', 'quantite' => -$x['quantiteStock'],
                     'user_id' => $vendeur->id, 'motif' => 'Vente '.$vente->numeroAffiche(), 'vente_id' => $vente->id,
                 ]);
+                if ($venduLe !== null) {
+                    $mouvement->forceFill(['created_at' => $venduLe])->save();
+                }
             }
 
             foreach ($besoins as $varianteId => $quantite) {
@@ -319,10 +370,10 @@ class VenteService
      *
      * @return array<int, array{promotion: Promotion, montant: int}>
      */
-    private function meilleuresPromotions(User $vendeur, array $lignes): array
+    private function meilleuresPromotions(User $vendeur, array $lignes, ?\DateTimeInterface $le = null): array
     {
         $choix = [];
-        foreach (Promotion::query()->forCurrentContext($vendeur)->enCours()->orderBy('id')->get() as $promo) {
+        foreach (Promotion::query()->forCurrentContext($vendeur)->enCours($le)->orderBy('id')->get() as $promo) {
             $visees = array_filter($lignes, fn ($x) => $promo->vise($x['produit'], $x['variante'], $x['unite']));
             if (! $visees) {
                 continue;

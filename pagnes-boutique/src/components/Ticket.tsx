@@ -2,6 +2,7 @@ import React from 'react';
 import type { Vente } from '../types';
 import { useApp } from '../store';
 import { fcfa, fmtDateTime, num, numeroVente } from '../lib/format';
+import { referenceProvisoire } from '../lib/horsLigne';
 import { t, uniteLabel } from '../i18n';
 
 export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' }) {
@@ -18,7 +19,10 @@ export function Ticket({ vente, format }: { vente: Vente; format: '80mm' | 'A4' 
         <div>{p.telephone}</div>
       </div>
       <div className="t-meta">
-        <div><strong>{t('ticket.numero', { n: numeroVente(vente.numero) })}</strong></div>
+        {vente.horsLigne && !vente.numero
+          // Vente hors ligne pas encore reçue : référence provisoire, le numéro est attribué par le serveur à l'envoi.
+          ? <div><strong>{t('ticket.numero', { n: referenceProvisoire(vente.uuid!) })}</strong><div>{t('ticket.horsLigne')}</div></div>
+          : <div><strong>{t('ticket.numero', { n: numeroVente(vente.numero) })}</strong></div>}
         <div>{fmtDateTime(vente.date)}</div>
         <div>{t('ticket.vendeur')} : {vendeur ?? '—'}</div>
         {client && <div>{t('ticket.client')} : {client}</div>}

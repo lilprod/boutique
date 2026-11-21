@@ -68,6 +68,7 @@ export const toVente = (v: any): Vente => ({
   paiement: { mode: v.paiement_mode as ModePaiement, reference: v.paiement_reference ?? undefined, recu: v.paiement_recu ?? undefined },
   statut: v.statut,
   annulation: v.statut === 'annulee' ? { date: v.annulation_date, userId: s(v.annulation_user_id), motif: v.annulation_motif ?? '' } : undefined,
+  horsLigne: !!v.hors_ligne, uuid: v.uuid ?? undefined, totalEncaisse: v.total_encaisse ?? undefined, anomalies: v.anomalies ?? undefined,
 });
 
 export const toMouvement = (m: any): Mouvement => ({

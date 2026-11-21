@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Vente;
 use App\Services\VenteService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
@@ -104,6 +105,12 @@ class VenteController extends Controller
             'lignes.*.remise_type' => 'nullable|in:pct,fcfa',
             'lignes.*.remise_valeur' => 'nullable|numeric|min:0',
             'points_utilises' => 'nullable|integer|min:0|max:100000000',
+            // Caisse hors ligne : identifiant choisi par la tablette (envoi rejouable sans doublon),
+            // heure réelle de la vente et montant encaissé sans le serveur.
+            'uuid' => 'nullable|uuid',
+            'hors_ligne' => 'nullable|array',
+            'hors_ligne.vendue_le' => 'required_with:hors_ligne|date',
+            'hors_ligne.total' => 'required_with:hors_ligne|integer|min:0',
         ]);
 
         $cart = array_map(fn ($l) => [
@@ -111,15 +118,31 @@ class VenteController extends Controller
             'remise_type' => $l['remise_type'] ?? 'pct', 'remise_valeur' => $l['remise_valeur'] ?? 0,
         ], $data['lignes']);
 
+        $horsLigne = isset($data['hors_ligne'])
+            ? ['vendue_le' => Carbon::parse($data['hors_ligne']['vendue_le']), 'total' => (int) $data['hors_ligne']['total']]
+            : null;
+        $uuid = isset($data['uuid']) ? strtolower($data['uuid']) : null;
+        $existait = $uuid !== null && Vente::query()->forCurrentContext($request->user())->where('uuid', $uuid)->exists();
+
         try {
             $vente = $this->service->valider(
                 $request->user(), $cart, $data['client_id'] ?? null,
-                $data['remise_type'], (float) $data['remise_valeur'], $data['paiement'], (int) ($data['points_utilises'] ?? 0)
+                $data['remise_type'], (float) $data['remise_valeur'], $data['paiement'], (int) ($data['points_utilises'] ?? 0),
+                $horsLigne, $uuid
             );
 
-            return response()->json($this->masquerCouts($vente, $request), 201);
+            // 200 : cette vente avait déjà été reçue (renvoi après une coupure), rien n'a été enregistré de nouveau.
+            return response()->json($this->masquerCouts($vente, $request), $existait ? 200 : 201);
         } catch (RegleMetierException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
+        } catch (UniqueConstraintViolationException $e) {
+            // Deux envois simultanés de la même vente : le second renvoie celle que le premier a enregistrée.
+            $deja = $uuid !== null ? Vente::query()->forCurrentContext($request->user())->where('uuid', $uuid)->first() : null;
+            if (! $deja) {
+                throw $e; // autre contrainte : pas un renvoi de vente
+            }
+
+            return response()->json($this->masquerCouts($deja->load('lignes', 'client', 'vendeur:id,nom'), $request), 200);
         }
     }
 

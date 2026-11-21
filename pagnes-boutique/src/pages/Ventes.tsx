@@ -6,6 +6,7 @@ import { get } from '../api';
 import { t } from '../i18n';
 import { Badge, Empty, Field, Modal, SkeletonRows, useUI } from '../components/ui';
 import { TicketModal } from '../components/TicketModal';
+import { texteAnomalie } from '../components/HorsLigne';
 import { fcfa, fmtDateTime, numeroVente } from '../lib/format';
 import { toVente } from '../lib/mappers';
 import { useDebounced, usePaged } from '../lib/usePaged';
@@ -55,7 +56,10 @@ export default function Ventes() {
             <tbody>
               {list.rows.map(v => (
                 <tr key={v.id} className={v.statut === 'annulee' ? 'struck' : ''} onClick={() => setSel(v)} tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setSel(v); }}>
-                  <td className="strong">{numeroVente(v.numero)}</td><td>{fmtDateTime(v.date)}</td>
+                  <td className="strong">{numeroVente(v.numero)}
+                    {v.horsLigne && <span className="badge mute hl-badge" title={t('hl.badgeTitre')}>{t('hl.badge')}</span>}
+                    {v.anomalies?.length ? <span className="badge warn hl-badge" title={v.anomalies.map(texteAnomalie).join('\n')}>{t('hl.aVerifier')}</span> : null}
+                  </td><td>{fmtDateTime(v.date)}</td>
                   <td>{v.vendeurNom ?? '—'}</td><td>{v.clientNom ?? '—'}</td>
                   <td className="r">{v.lignes.length}</td><td>{t('pay.' + v.paiement.mode)}</td><td className="r strong">{fcfa(v.total)}</td>
                   <td><Badge kind={v.statut === 'validee' ? 'ok' : 'mute'}>{t('ventes.' + v.statut)}</Badge></td>
@@ -76,7 +80,14 @@ export default function Ventes() {
       </section>
 
       {sel && (
-        <TicketModal vente={sel} title={t('ventes.detail', { n: numeroVente(sel.numero) })} onClose={() => { setSel(null); setCancel(false); }}>
+        <TicketModal vente={sel} title={t('ventes.detail', { n: numeroVente(sel.numero) })} onClose={() => { setSel(null); setCancel(false); }}
+          lead={sel.horsLigne ? (
+            <div className={sel.anomalies?.length ? 'hl-detail warn' : 'hl-detail'}>
+              <strong>{t('hl.detailTitre')}</strong>
+              {sel.totalEncaisse != null && <div className="muted-s">{t('hl.encaisse', { m: fcfa(sel.totalEncaisse) })}</div>}
+              {sel.anomalies?.length ? <ul>{sel.anomalies.map((a, i) => <li key={i}>{texteAnomalie(a)}</li>)}</ul> : <div className="muted-s">{t('hl.sansEcart')}</div>}
+            </div>
+          ) : undefined}>
           {admin && sel.statut === 'validee' && <button className="btn btn-danger" onClick={() => setCancel(true)}><LuBan /> {t('ventes.annuler')}</button>}
         </TicketModal>
       )}

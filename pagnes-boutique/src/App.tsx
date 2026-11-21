@@ -3,6 +3,7 @@ import { LuBuilding2, LuHandCoins, LuTag, LuChevronsLeft, LuChevronsRight, LuGau
 import { AppProvider, useApp } from './store';
 import { UIProvider } from './components/ui';
 import { TopBar } from './components/TopBar';
+import { BandeauHorsLigne } from './components/HorsLigne';
 import { Link, go, useRoute } from './router';
 import { t } from './i18n';
 import { cls } from './lib/format';
@@ -73,6 +74,7 @@ function Layout() {
       </aside>
       <main className="main" ref={mainRef}>
         <TopBar notificationsPath="/notifications" espace={db.parametres.boutique} />
+        <BandeauHorsLigne />
         <div key={current?.to}>{page()}</div>
       </main>
     </div>

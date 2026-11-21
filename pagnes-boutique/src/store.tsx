@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CartLine, Client, DB, ModePaiement, Parametres, Produit, Promotion, Proprietaire, Remise, Res, Role, UniteVente, User, Variante, Vente } from './types';
-import { ApiError, del, get, post, put, setBoutiqueOuverte, setUnauthorizedHandler, token } from './api';
+import { ApiError, del, get, getBoutiqueOuverte, post, put, setBoutiqueOuverte, setConnexionHandler, setUnauthorizedHandler, token } from './api';
+import { ajouterALaFile, effacerCatalogue, enregistrerCatalogue, lireCatalogue, lireFile, marquerErreur, nouvelUuid, retirerDeLaFile, type VenteEnAttente } from './lib/horsLigne';
 import { fromClient, fromParametres, fromProduit, fromPromotion, fromProprietaire, fromUser, fromVente, toClient, toParametres, toProduit, toPromotion, toProprietaire, toUser, toVariante, toVente } from './lib/mappers';
 import { buildLignes, minimumNonAtteint, prixUnitaire, refusPoints, remisePoints, totaux, UNITES, vendAu } from './lib/calc';
 import { num, r2 } from './lib/format';
@@ -8,7 +9,10 @@ import { t, uniteLabel } from './i18n';
 
 export interface VarForm { id?: string; coloris: string; sku: string; c1: string; c2: string; seuil: number; stock?: number }
 export type PhotoChange = { file: Blob } | { remove: true };
-export interface VenteInput { cart: CartLine[]; clientId?: string; /** Fiche du client choisi (solde de points pour le contrôle immédiat). */ client?: Client; remise: Remise; mode: ModePaiement; reference?: string; recu?: number; pointsUtilises?: number }
+export interface VenteInput {
+  /** Identifiant de la vente, choisi par la caisse : un envoi rejoué (coupure, hors ligne) ne crée jamais de doublon. */
+  uuid?: string;
+  cart: CartLine[]; clientId?: string; /** Fiche du client choisi (solde de points pour le contrôle immédiat). */ client?: Client; remise: Remise; mode: ModePaiement; reference?: string; recu?: number; pointsUtilises?: number }
 
 const fail = (error: string): Res<any> => ({ ok: false, error });
 const good = <T,>(data?: T): Res<T> => ({ ok: true, data });
@@ -26,6 +30,16 @@ export interface App {
   ready: boolean;
   /** Message à afficher sur l'écran de connexion (session expirée, serveur injoignable…). */
   notice: string | null;
+  /** Serveur injoignable : la caisse vend avec le catalogue gardé sur la tablette (voir lib/horsLigne.ts). */
+  horsLigne: boolean;
+  /** Date du catalogue utilisé hors ligne (ISO), si la session a démarré sans réseau. */
+  catalogueDu: string | null;
+  /** Ventes de ce compte encaissées sans réseau, pas encore reçues par le serveur. */
+  enAttente: VenteEnAttente[];
+  /** Envoie tout de suite les ventes en attente (sinon : au retour du réseau, puis toutes les 30 s). */
+  synchroniser: () => Promise<void>;
+  /** Retire une vente refusée par le serveur de la file (après l'avoir régularisée à la main). */
+  retirerVenteEnAttente: (uuid: string) => void;
   login: (identifiant: string, mdp: string) => Promise<Res>;
   logout: () => Promise<void>;
   /** Gérant : ouvre une boutique de son entreprise (sans identifiant : sa boutique de rattachement). */
@@ -90,6 +104,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [shopMode, setShopMode] = useState(false);
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [horsLigne, setHorsLigne] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
+  const horsLigneRef = useRef(horsLigne);
+  horsLigneRef.current = horsLigne;
+  const [catalogueDu, setCatalogueDu] = useState<string | null>(null);
+  const [file, setFile] = useState<VenteEnAttente[]>(() => lireFile());
   const userRef = useRef(user);
   userRef.current = user;
   const shopModeRef = useRef(shopMode);
@@ -185,12 +204,94 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (!r.ok) setNotice(r.error!);
         } catch (e) {
           // Serveur injoignable : on garde le jeton pour la prochaine tentative ; sinon (401…) `request` l'a déjà effacé.
-          if (e instanceof ApiError && e.status === 0) setNotice(e.message); else token.set(null);
+          if (e instanceof ApiError && e.status === 0) {
+            // Caisse hors ligne : on reprend la dernière session avec le catalogue gardé sur la tablette.
+            const c = lireCatalogue();
+            if (c) {
+              setBoutiqueOuverte(c.boutiqueId);
+              shopModeRef.current = c.shopMode;
+              setShopMode(c.shopMode);
+              setUser({ id: c.user.id, nom: c.user.nom, identifiant: '', motDePasse: '', role: c.user.role, actif: true });
+              setData({ ...EMPTY, produits: c.produits, variantes: c.variantes, parametres: c.parametres, promotions: c.promotions });
+              setCatalogueDu(c.enregistreLe);
+              setHorsLigne(true);
+            } else setNotice(e.message);
+          } else token.set(null);
         }
       }
       setReady(true);
     })();
   }, [start]);
+
+  /* ---------- Caisse hors ligne ---------- */
+
+  // État de la connexion : événements du navigateur, et chaque réponse ou échec de l'API.
+  useEffect(() => {
+    setConnexionHandler(ok => setHorsLigne(!ok));
+    const on = () => setHorsLigne(false);
+    const off = () => setHorsLigne(true);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, []);
+
+  // Le catalogue de la boutique est gardé à chaque chargement réussi (sans prix d'achat), pour vendre sans réseau.
+  useEffect(() => {
+    if (!user || horsLigne || data === EMPTY || data.produits.length === 0) return;
+    if (user.role === 'super_admin' || (user.role === 'tenant_admin' && !shopMode)) return;
+    enregistrerCatalogue({
+      user: { id: user.id, nom: user.nom, role: user.role }, boutiqueId: getBoutiqueOuverte(), shopMode,
+      produits: data.produits, variantes: data.variantes, parametres: data.parametres, promotions: data.promotions,
+    });
+  }, [data, user, shopMode, horsLigne]);
+
+  /** Envoie une à une les ventes en attente de ce compte et de cette boutique. Un refus est noté et n'arrête pas les suivantes. */
+  const envoiEnCours = useRef(false);
+  const synchroniser = useCallback(async () => {
+    const u = userRef.current;
+    if (envoiEnCours.current || !u || !token.get()) return;
+    envoiEnCours.current = true;
+    let recues = 0;
+    try {
+      for (const e of lireFile()) {
+        if (e.userId !== u.id || e.boutiqueId !== getBoutiqueOuverte()) continue;
+        try {
+          await post('/ventes', e.payload); // rejouable : le serveur reconnaît l'uuid et ne crée pas de doublon
+          retirerDeLaFile(e.uuid);
+          recues++;
+        } catch (err) {
+          if (err instanceof ApiError && (err.status === 0 || err.status === 401)) break; // toujours hors ligne, ou session expirée
+          marquerErreur(e.uuid, err instanceof ApiError ? err.message : t('err.inattendue'));
+        }
+      }
+    } finally {
+      envoiEnCours.current = false;
+      setFile(lireFile());
+    }
+    if (recues > 0) await load(['produits']).catch(() => { /* rechargé au prochain passage */ });
+  }, [load]);
+
+  const retirerVenteEnAttente = (uuid: string) => { retirerDeLaFile(uuid); setFile(lireFile()); };
+
+  // Retour du réseau : on relit les données du serveur (session démarrée hors ligne) et on envoie la file.
+  const etaitHorsLigne = useRef(horsLigne);
+  useEffect(() => {
+    const retour = etaitHorsLigne.current && !horsLigne;
+    etaitHorsLigne.current = horsLigne;
+    if (!user || horsLigne) return;
+    if (retour && catalogueDu) {
+      void load(['produits', 'parametres', 'users', 'fournisseurs', 'proprietaires', 'promotions']).then(() => setCatalogueDu(null)).catch(() => {});
+    }
+    void synchroniser();
+  }, [horsLigne, user, catalogueDu, load, synchroniser]);
+
+  // Tant qu'il reste des ventes à envoyer : nouvel essai toutes les 30 s (le serveur peut être joignable sans événement « online »).
+  const aEnvoyer = user ? file.some(e => e.userId === user.id) : false;
+  useEffect(() => {
+    if (!aEnvoyer) return;
+    const id = window.setInterval(() => { void synchroniser(); }, 30_000);
+    return () => window.clearInterval(id);
+  }, [aEnvoyer, synchroniser]);
 
   const api: App = {
     db, user, shopMode, ready, notice,
@@ -207,8 +308,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     logout: async () => {
       try { await post('/logout'); } catch { /* jeton déjà invalide ou serveur injoignable : on déconnecte quand même */ }
+      // Le catalogue ne reste pas sur une tablette partagée ; les ventes en attente, si : elles partiront au prochain retour du vendeur.
+      effacerCatalogue();
       clear(); setNotice(null);
     },
+
+    horsLigne, catalogueDu, synchroniser, retirerVenteEnAttente,
+    enAttente: user ? file.filter(e => e.userId === user.id) : [],
 
     openBoutique,
     returnToTenantPortal,
@@ -288,12 +394,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const aPayer = tot.total - remisePoints(d.parametres, points);
       if ((i.mode === 'flooz' || i.mode === 'tmoney') && !(i.reference || '').trim()) return fail(t('err.reference'));
       if (i.mode === 'especes' && i.recu && i.recu > 0 && i.recu < aPayer) return fail(t('err.recuInsuffisant'));
-      return run(async () => {
-        // La vente est validée par le serveur (stock, remise, numéro) : c'est lui qui fait foi, pas ce calcul.
-        const vente = toVente(await post('/ventes', fromVente(i)));
-        await load(['produits']); // stock vendu ; les points du client se relisent dans sa fiche
-        return vente;
+      const uuid = i.uuid ?? nouvelUuid();
+      const payload = { ...fromVente(i), uuid };
+      if (!horsLigneRef.current) {
+        try {
+          // La vente est validée par le serveur (stock, remise, numéro) : c'est lui qui fait foi, pas ce calcul.
+          const vente = toVente(await post('/ventes', payload));
+          await load(['produits']).catch(() => { /* stock relu au prochain chargement */ }); // les points se relisent dans la fiche client
+          return good(vente);
+        } catch (e) {
+          // Erreur métier ou session : affichée. Serveur injoignable : on bascule sur la vente hors ligne ci-dessous.
+          if (!(e instanceof ApiError) || e.status !== 0) return fail(e instanceof ApiError ? e.message : t('err.inattendue'));
+        }
+      }
+
+      // Hors ligne : la vente est gardée sur la tablette et partira au retour du réseau (même uuid : jamais de doublon).
+      if (points > 0) return fail(t('err.pointsHorsLigne'));
+      const maintenant = new Date().toISOString();
+      const vente: Vente = {
+        id: uuid, uuid, numero: 0, date: maintenant, horsLigne: true, totalEncaisse: tot.total,
+        vendeurId: userRef.current.id, vendeurNom: userRef.current.nom, clientId: i.client?.id, clientNom: i.client?.nom,
+        lignes, sousTotal: tot.sousTotal, remise: i.remise, remiseMontant: tot.remiseMontant, total: tot.total, marge: 0,
+        pointsUtilises: 0, remisePoints: 0, pointsGagnes: 0,
+        paiement: { mode: i.mode, reference: i.reference?.trim() || undefined, recu: i.mode === 'especes' && i.recu ? i.recu : undefined },
+        statut: 'validee',
+      };
+      const garde = ajouterALaFile({
+        uuid, userId: userRef.current.id, boutiqueId: getBoutiqueOuverte(), vente,
+        payload: { ...payload, points_utilises: 0, hors_ligne: { vendue_le: maintenant, total: tot.total } },
       });
+      if (!garde) return fail(t('err.stockageHorsLigne'));
+      setFile(lireFile());
+      // Le stock affiché baisse tout de suite, pour ne pas revendre ce qui vient de partir.
+      setData(prev => ({ ...prev, variantes: prev.variantes.map(v => (need.has(v.id) ? { ...v, stock: r2(v.stock - need.get(v.id)!) } : v)) }));
+      return good(vente);
     },
 
     annulerVente: async (id, motif) => {

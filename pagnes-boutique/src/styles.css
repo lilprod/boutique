@@ -835,3 +835,18 @@ input[type="file"].input { padding: 7px var(--s-2); }
   *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
   .skel, .boot-mark { animation: none !important; }
 }
+
+/* ---------- Caisse hors ligne ---------- */
+.offline-band { margin: 0 var(--s-5) var(--s-3); padding: var(--s-3) var(--s-4); border-radius: var(--r); border: 1px solid var(--border); background: var(--brand-soft); color: var(--brand-ink); }
+.offline-band.is-offline { background: var(--gold-soft); color: var(--gold-ink); border-color: transparent; }
+.offline-head { display: flex; align-items: center; gap: var(--s-3); }
+.offline-head > svg { flex: none; width: 20px; height: 20px; }
+.offline-band .muted-s { color: inherit; opacity: 0.85; }
+.offline-errors { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: 6px; }
+.offline-errors li { display: flex; align-items: center; gap: var(--s-2); padding: 6px 10px; border-radius: var(--r-sm, 8px); background: var(--danger-soft); color: var(--danger-ink); font-size: 13px; }
+.offline-errors li > svg { flex: none; }
+.hl-badge { margin-left: 6px; vertical-align: middle; }
+.hl-detail { margin-bottom: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r); background: var(--surface-3); font-size: 13px; }
+.hl-detail.warn { background: var(--gold-soft); color: var(--gold-ink); }
+.hl-detail ul { margin: 4px 0 0; padding-left: 18px; }
+@media (max-width: 640px) { .offline-band { margin: 0 var(--s-4) var(--s-3); } .offline-head { flex-wrap: wrap; } }

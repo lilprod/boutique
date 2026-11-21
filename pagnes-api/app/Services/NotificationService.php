@@ -8,6 +8,7 @@ use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Variante;
+use App\Models\Vente;
 use Illuminate\Support\Carbon;
 
 /**
@@ -126,6 +127,22 @@ class NotificationService
                 'date' => now()->toIso8601String(),
                 'lien' => '/stock',
             ];
+        }
+
+        if ($user->estAdmin()) {
+            // Ventes faites hors ligne et reçues avec un écart (stock manquant, montant, remise…) : à vérifier.
+            $aVerifier = Vente::query()->forCurrentContext($user)->where('hors_ligne', true)->whereNotNull('anomalies')
+                ->where('statut', 'validee')->where('synchronisee_le', '>=', now()->subDays(30))->pluck('id');
+            if ($aVerifier->isNotEmpty()) {
+                $notifs[] = [
+                    'id' => 'hors-ligne-'.md5($aVerifier->sort()->implode(',')),
+                    'niveau' => 'warn',
+                    'titre' => __('Ventes hors ligne à vérifier'),
+                    'message' => __(':n vente(s) encaissée(s) sans réseau ont été reçues avec un écart (stock, montant ou remise).', ['n' => $aVerifier->count()]),
+                    'date' => now()->toIso8601String(),
+                    'lien' => '/ventes',
+                ];
+            }
         }
 
         if ($user->estAdmin() && $user->tenant_id) {

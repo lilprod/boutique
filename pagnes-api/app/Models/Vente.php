@@ -15,11 +15,15 @@ class Vente extends Model
         'tenant_id', 'boutique_id', 'numero', 'vendeur_id', 'client_id', 'sous_total', 'remise_type', 'remise_valeur',
         'remise_montant', 'points_utilises', 'remise_points', 'points_gagnes', 'total', 'marge', 'paiement_mode', 'paiement_reference', 'paiement_recu',
         'statut', 'annulation_date', 'annulation_user_id', 'annulation_motif',
+        'uuid', 'hors_ligne', 'total_encaisse', 'anomalies', 'synchronisee_le',
     ];
 
     protected function casts(): array
     {
-        return ['remise_valeur' => 'float', 'annulation_date' => 'datetime'];
+        return [
+            'remise_valeur' => 'float', 'annulation_date' => 'datetime',
+            'hors_ligne' => 'boolean', 'anomalies' => 'array', 'synchronisee_le' => 'datetime',
+        ];
     }
 
     public function tenant(): BelongsTo

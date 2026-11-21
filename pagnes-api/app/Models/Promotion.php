@@ -27,9 +27,10 @@ class Promotion extends Model
     }
 
     /** Promotions actives aujourd'hui (bornes de dates incluses). */
-    public function scopeEnCours(Builder $query): Builder
+    /** Promotions actives à une date (par défaut aujourd'hui ; vente hors ligne : le jour de la vente). */
+    public function scopeEnCours(Builder $query, ?\DateTimeInterface $le = null): Builder
     {
-        $jour = now()->toDateString();
+        $jour = ($le ? \Illuminate\Support\Carbon::instance($le) : now())->toDateString();
 
         return $query->where('actif', true)
             ->where(fn ($q) => $q->whereNull('debut')->orWhere('debut', '<=', $jour))

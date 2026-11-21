@@ -4,6 +4,7 @@ import type { CartLine, Client, ModePaiement, Produit, Promotion, Remise, UniteV
 import { get } from '../api';
 import { toClient } from '../lib/mappers';
 import { useDebounced } from '../lib/usePaged';
+import { nouvelUuid, referenceProvisoire } from '../lib/horsLigne';
 import { useApp } from '../store';
 import { t, uniteLabel } from '../i18n';
 import { Badge, Bump, Empty, NumInput, Segmented, Swatch, animateOut, reducedMotion, useUI } from '../components/ui';
@@ -22,7 +23,7 @@ const MODES: { v: ModePaiement; icon: React.ReactNode }[] = [
 const ZERO: Remise = { type: 'pct', valeur: 0 };
 
 export default function Caisse() {
-  const { db, user, shopMode, validerVente } = useApp();
+  const { db, user, shopMode, validerVente, horsLigne } = useApp();
   const { toast } = useUI();
   const admin = user!.role === 'admin' || user!.role === 'boutique_admin' || (user!.role === 'tenant_admin' && shopMode);
   const [q, setQ] = useState('');
@@ -52,6 +53,8 @@ export default function Caisse() {
   const [recu, setRecu] = useState(0);
   const [done, setDone] = useState<Vente | null>(null);
   const [busy, setBusy] = useState(false);
+  // Identifiant de la vente en cours : renvoyé tel quel si l'envoi est rejoué, il ne change qu'une fois la vente enregistrée.
+  const [venteUuid, setVenteUuid] = useState(nouvelUuid);
 
   const types = [...new Set(db.produits.map(p => p.type))].sort((a, b) => a.localeCompare(b, 'fr'));
   const tiles = useMemo(() => db.variantes.map(v => ({ v, p: db.produits.find(p => p.id === v.produitId)! })).filter(r => r.p)
@@ -84,7 +87,8 @@ export default function Caisse() {
   });
   if (!admin && tot.remiseEffPct > db.parametres.remiseMaxVendeur + 0.001) problems.push(t('err.remiseMax', { max: String(db.parametres.remiseMaxVendeur) }));
   // Fidélité : les points se déduisent après toutes les remises ; le client gagne des points sur ce qu'il paie.
-  const fidelite = params.fideliteActive;
+  // Hors ligne, le solde de points n'est pas connu de la tablette : pas d'utilisation de points.
+  const fidelite = params.fideliteActive && !horsLigne;
   const pts = fidelite && client ? points : 0;
   const remPts = remisePoints(params, pts);
   const aPayer = tot.total - remPts;
@@ -100,10 +104,11 @@ export default function Caisse() {
   const submit = async () => {
     if (busy) return; // une seule vente à la fois : un double clic ne doit jamais créer deux ventes
     setBusy(true);
-    const r = await validerVente({ cart, clientId: client?.id, client: client ?? undefined, remise, mode, reference, recu, pointsUtilises: pts });
+    const r = await validerVente({ uuid: venteUuid, cart, clientId: client?.id, client: client ?? undefined, remise, mode, reference, recu, pointsUtilises: pts });
     setBusy(false);
     if (!r.ok) return toast(r.error!, 'err');
     setDone(r.data!);
+    setVenteUuid(nouvelUuid());
     setCart([]); setRemise(ZERO); setClient(null); setClientQ(''); setReference(''); setRecu(0); setMode('especes'); setPoints(0);
   };
 
@@ -238,6 +243,7 @@ export default function Caisse() {
                 ) : <span className="hint">{t('fid.dispo', { n: num(params.fideliteSeuil) })}</span>}
               </div>
             )}
+            {params.fideliteActive && horsLigne && client && <div className="hint">{t('fid.horsLigne')}</div>}
           </div>
 
           <div className="cart-sec">
@@ -294,14 +300,14 @@ export default function Caisse() {
 
       {newClient && <ClientForm onClose={() => setNewClient(false)} onSaved={c => { setClient(c); setPoints(0); setClientQ(''); }} />}
       {done && (
-        <TicketModal vente={done} title={t('caisse.venteValidee', { n: numeroVente(done.numero) })} onClose={() => setDone(null)}
+        <TicketModal vente={done} title={done.horsLigne && !done.numero ? t('caisse.venteHorsLigne', { ref: referenceProvisoire(done.uuid!) }) : t('caisse.venteValidee', { n: numeroVente(done.numero) })} onClose={() => setDone(null)}
           lead={
             <div className="sale-ok" role="status">
               <svg className="sale-ok-check" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="26" /><path d="M15 27.5l7.5 7.5L38 19" pathLength={1} /></svg>
               <div>
                 <div className="sale-ok-amount">{fcfa(done.total)}</div>
                 <div className="sale-ok-sub">
-                  {t('caisse.venteEnregistree')} · {t('pay.' + done.paiement.mode)}
+                  {done.horsLigne && !done.numero ? t('caisse.venteGardee') : t('caisse.venteEnregistree')} · {t('pay.' + done.paiement.mode)}
                   {done.paiement.mode === 'especes' && (done.paiement.recu ?? 0) > done.total && <> · {t('ticket.rendu')} <strong>{fcfa((done.paiement.recu ?? 0) - done.total)}</strong></>}
                 </div>
               </div>
