@@ -42,7 +42,8 @@ class DemoSeeder extends Seeder
         $contexte = ['tenant_id' => $tenant->id, 'boutique_id' => $boutique->id];
         $plan = Plan::create([
             'nom' => 'Démo boutique', 'slug' => 'demo-shop', 'prix' => 0, 'intervalle' => 'year',
-            'max_boutiques' => 1, 'max_utilisateurs' => 3, 'features' => ['stock', 'ventes', 'users'], 'actif' => true,
+            // 5 comptes actifs : les 4 de la démo (gérant, admin, 2 vendeurs) et une place pour essayer d'en créer un.
+            'max_boutiques' => 1, 'max_utilisateurs' => 5, 'features' => ['stock', 'ventes', 'users'], 'actif' => true,
         ]);
         $subscription = Subscription::create([
             'tenant_id' => $tenant->id, 'plan_id' => $plan->id, 'status' => 'active',
@@ -52,7 +53,7 @@ class DemoSeeder extends Seeder
         License::create([
             'tenant_id' => $tenant->id, 'subscription_id' => $subscription->id, 'status' => 'active',
             'cle' => strtoupper(Str::random(16)), 'activated_at' => now(),
-            'expires_at' => now()->addYear(), 'quota_usage' => ['boutiques' => 1, 'utilisateurs' => 3],
+            'expires_at' => now()->addYear(), 'quota_usage' => ['boutiques' => 1, 'utilisateurs' => 4],
         ]);
 
         $admin = User::create($contexte + ['nom' => 'Kafui Amegah', 'email' => 'admin', 'password' => Hash::make('admin123'), 'role' => 'admin', 'actif' => true]);

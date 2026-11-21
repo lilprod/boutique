@@ -80,7 +80,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 122 tests s'exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 123 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

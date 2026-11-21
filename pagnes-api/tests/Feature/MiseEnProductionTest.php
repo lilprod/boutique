@@ -185,4 +185,15 @@ class MiseEnProductionTest extends TestCase
             ->expectsOutputToContain('Aucune entreprise ne change')
             ->assertSuccessful();
     }
+
+    public function test_la_demo_laisse_une_place_pour_creer_un_compte(): void
+    {
+        $this->seed(DemoSeeder::class);
+        Sanctum::actingAs(User::where('email', 'admin')->firstOrFail());
+
+        $compte = ['nom' => 'Essai', 'role' => 'vendeur', 'actif' => true, 'mot_de_passe' => 'motdepasse'];
+        $this->postJson('/api/users', $compte + ['email' => 'essai-1'])->assertCreated();
+        // La formule de démo est alors pleine : la limite de comptes actifs reste visible.
+        $this->postJson('/api/users', $compte + ['email' => 'essai-2'])->assertStatus(422);
+    }
 }
