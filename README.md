@@ -86,7 +86,7 @@ cd pagnes-api
 php artisan test
 ```
 
-Les 142 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
+Les 143 tests s’exécutent sur MySQL ou MariaDB, base `pagnes_test` (voir `phpunit.xml`), à créer une fois :
 
 ```sql
 CREATE DATABASE pagnes_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -221,7 +221,7 @@ Les messages de l'API suivent la langue de l'en-tête `X-Langue` (`fr` par défa
 | Propriétaires | `GET /api/proprietaires` ; admin : `POST`, `PUT /{id}`, `DELETE /{id}`, `GET /api/rapports/proprietaires` (`?du=`, `?au=`) |
 | Tableau de bord | `GET /api/tableau-de-bord` : CA et ventes du jour, courbe sur 30 jours, pagnes les plus vendus, dernières ventes ; admin : marge et répartition par vendeur |
 | Notifications | `GET /api/notifications` : ruptures, stock bas et, pour l'admin, licence qui expire |
-| Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` |
+| Paramètres | `GET /api/parametres` ; admin : `PUT /api/parametres` (nom, adresse et téléphone sont aussi ceux de la boutique dans l'espace entreprise) |
 | Utilisateurs | admin : `GET`, `POST /api/users`, `PUT /api/users/{id}` |
 
 ### Espace entreprise (gérant)

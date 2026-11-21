@@ -219,4 +219,18 @@ class BoutiquesTest extends TestCase
         $this->postJson('/api/tenant/boutiques/'.$autre['boutique']->id.'/fermer')->assertNotFound();
         $this->assertSame('active', $autre['boutique']->fresh()->statut);
     }
+
+    public function test_le_nom_change_dans_les_parametres_se_retrouve_dans_l_espace_entreprise(): void
+    {
+        $c = $this->entreprise();
+        Sanctum::actingAs($c['badmin']);
+        $p = $this->getJson('/api/parametres')->assertOk()->json();
+
+        $this->putJson('/api/parametres', array_merge($p, ['boutique' => 'Pagnes du Marché', 'adresse' => 'Assigamé', 'telephone' => '+228 91 00 00 00']))->assertOk();
+
+        $b = $c['boutique']->fresh();
+        $this->assertSame(['Pagnes du Marché', 'Assigamé', '+228 91 00 00 00'], [$b->nom, $b->adresse, $b->telephone]);
+        Sanctum::actingAs($c['gerant']);
+        $this->getJson('/api/tenant/boutiques')->assertJsonPath('0.nom', 'Pagnes du Marché');
+    }
 }

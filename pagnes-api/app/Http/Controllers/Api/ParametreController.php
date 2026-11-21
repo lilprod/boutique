@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Boutique;
 use App\Models\Parametre;
 use App\Services\StockService;
 use Illuminate\Http\Request;
@@ -13,7 +14,8 @@ class ParametreController extends Controller
 {
     public function show(Request $request)
     {
-        return Parametre::actuel($request->user());
+        // Toujours 200 : une lecture qui crée les paramètres par défaut d'une boutique neuve n'est pas une création.
+        return response()->json(Parametre::actuel($request->user()));
     }
 
     /** Réservé à l'administrateur (voir routes/api.php). */
@@ -52,6 +54,11 @@ class ParametreController extends Controller
                 'tenant_id' => $user->tenant_id,
                 'boutique_id' => $user->boutique_id,
             ]));
+            // Nom, adresse et téléphone sont aussi ceux de la boutique dans l'espace entreprise (et inversement,
+            // voir TenantPortalController::updateBoutique) : une seule identité, où qu'on la modifie.
+            Boutique::whereKey($user->boutique_id)->where('tenant_id', $user->tenant_id)->update([
+                'nom' => $data['boutique'], 'adresse' => $data['adresse'] ?? null, 'telephone' => $data['telephone'] ?? null,
+            ]);
 
             return $p;
         });
