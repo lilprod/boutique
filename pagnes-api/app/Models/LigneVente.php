@@ -15,13 +15,13 @@ class LigneVente extends Model
 
     protected $fillable = [
         'tenant_id', 'boutique_id', 'vente_id', 'variante_id', 'produit_id', 'proprietaire_id', 'libelle', 'coloris', 'unite', 'quantite',
-        'yards', 'quantite_stock', 'prix_unitaire', 'brut', 'remise_type', 'remise_valeur', 'promotion_id', 'promotion_libelle', 'remise_promo',
+        'yards', 'quantite_stock', 'manque_stock', 'prix_unitaire', 'brut', 'remise_type', 'remise_valeur', 'promotion_id', 'promotion_libelle', 'remise_promo',
         'total', 'net', 'cout',
     ];
 
     protected function casts(): array
     {
-        return ['quantite' => 'float', 'yards' => 'float', 'quantite_stock' => 'float', 'remise_valeur' => 'float'];
+        return ['quantite' => 'float', 'yards' => 'float', 'quantite_stock' => 'float', 'manque_stock' => 'float', 'remise_valeur' => 'float'];
     }
 
     public function tenant(): BelongsTo

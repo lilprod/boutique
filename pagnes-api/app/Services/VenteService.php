@@ -169,13 +169,17 @@ class VenteService
                 }
             }
 
+            // Quantité vendue hors ligne qui n'est plus en stock, par coloris : elle ne sort pas du stock (jamais négatif).
+            $manques = [];
             foreach ($besoins as $varianteId => $quantite) {
                 $variante = $variantes->get($varianteId);
                 if (round($quantite, 2) > (float) $variante->stock && $horsLigne !== null) {
-                    // La vente a eu lieu : elle est enregistrée, le stock passe en négatif, l'administrateur est prévenu.
+                    // La vente a eu lieu : elle est enregistrée, le stock descend à 0 sans aller en dessous,
+                    // et le manque est signalé à l'administrateur pour l'inventaire.
+                    $manques[$varianteId] = round($quantite - max(0, (float) $variante->stock), 2);
                     $anomalies[] = [
                         'type' => 'stock', 'produit' => $variante->produit->nom, 'coloris' => $variante->coloris,
-                        'manque' => round($quantite - (float) $variante->stock, 2), 'unite' => $uniteStock,
+                        'manque' => $manques[$varianteId], 'unite' => $uniteStock,
                     ];
                 } elseif (round($quantite, 2) > (float) $variante->stock) {
                     throw new RegleMetierException('Stock insuffisant pour :produit — :coloris : :stock :unite(s) disponible(s).', [
@@ -255,6 +259,17 @@ class VenteService
 
             // Remise globale et remise en points sont réparties sur les lignes : `net` est ce qui a été encaissé pour chacune.
             $nets = self::repartirRemise(array_column($lignes, 'total'), $remiseGlobale + $remisePoints);
+            // Le manque d'un coloris est porté par ses dernières lignes : chaque ligne sait ce qu'elle a vraiment sorti du stock.
+            $resteManque = $manques;
+            $manqueLigne = [];
+            foreach (array_reverse($lignes, true) as $i => $x) {
+                $vid = $x['variante']->id;
+                $m = min((float) $x['quantiteStock'], $resteManque[$vid] ?? 0);
+                $manqueLigne[$i] = round($m, 2);
+                if (isset($resteManque[$vid])) {
+                    $resteManque[$vid] = round($resteManque[$vid] - $m, 2);
+                }
+            }
             foreach ($lignes as $i => $x) {
                 LigneVente::create([
                     'tenant_id' => $vendeur->tenant_id,
@@ -269,6 +284,7 @@ class VenteService
                     'quantite' => $x['l']['quantite'],
                     'yards' => $x['yards'],
                     'quantite_stock' => $x['quantiteStock'],
+                    'manque_stock' => $manqueLigne[$i],
                     'prix_unitaire' => $x['prixUnitaire'],
                     'brut' => $x['brut'],
                     'remise_type' => $x['l']['remise_type'] ?? 'pct',
@@ -280,10 +296,14 @@ class VenteService
                     'net' => $nets[$i],
                     'cout' => $x['cout'],
                 ]);
+                $sortie = round((float) $x['quantiteStock'] - $manqueLigne[$i], 2);
+                if ($sortie <= 0) {
+                    continue; // rien n'est sorti du stock pour cette ligne : pas de mouvement
+                }
                 $mouvement = Mouvement::create([
                     'tenant_id' => $vendeur->tenant_id,
                     'boutique_id' => $vendeur->boutique_id,
-                    'variante_id' => $x['variante']->id, 'type' => 'vente', 'quantite' => -$x['quantiteStock'],
+                    'variante_id' => $x['variante']->id, 'type' => 'vente', 'quantite' => -$sortie,
                     'user_id' => $vendeur->id, 'motif' => 'Vente '.$vente->numeroAffiche(), 'vente_id' => $vente->id,
                 ]);
                 if ($venduLe !== null) {
@@ -292,7 +312,10 @@ class VenteService
             }
 
             foreach ($besoins as $varianteId => $quantite) {
-                $variantes->get($varianteId)->decrement('stock', $quantite);
+                $sortie = round($quantite - ($manques[$varianteId] ?? 0), 2);
+                if ($sortie > 0) {
+                    $variantes->get($varianteId)->decrement('stock', $sortie);
+                }
             }
 
             if ($client) {
@@ -337,11 +360,16 @@ class VenteService
             // On restaure la quantité gelée à la vente (unité de stock d'alors), jamais `yards`
             // qui n'est qu'un pivot de calcul du coût.
             foreach ($vente->lignes as $ligne) {
-                $variantes->get($ligne->variante_id)->increment('stock', $ligne->quantite_stock);
+                // Seul ce qui est vraiment sorti du stock y revient (une vente hors ligne a pu le trouver vide).
+                $rendu = round((float) $ligne->quantite_stock - (float) $ligne->manque_stock, 2);
+                if ($rendu <= 0) {
+                    continue;
+                }
+                $variantes->get($ligne->variante_id)->increment('stock', $rendu);
                 Mouvement::create([
                     'tenant_id' => $vente->tenant_id,
                     'boutique_id' => $vente->boutique_id,
-                    'variante_id' => $ligne->variante_id, 'type' => 'annulation', 'quantite' => $ligne->quantite_stock,
+                    'variante_id' => $ligne->variante_id, 'type' => 'annulation', 'quantite' => $rendu,
                     'user_id' => $utilisateur->id, 'motif' => 'Annulation '.$vente->numeroAffiche(), 'vente_id' => $vente->id,
                 ]);
             }

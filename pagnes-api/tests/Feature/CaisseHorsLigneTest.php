@@ -82,14 +82,18 @@ class CaisseHorsLigneTest extends TestCase
         $this->assertSame(1.0, (float) $this->variante->fresh()->stock);
     }
 
-    public function test_stock_insuffisant_a_la_reception_la_vente_est_acceptee_et_signalee(): void
+    public function test_stock_insuffisant_a_la_reception_la_vente_est_acceptee_et_le_stock_reste_a_zero(): void
     {
         // Stock 2 ; la tablette hors ligne en a vendu 3 (une vente en ligne était passée entre-temps).
         $r = $this->venteHorsLigne(quantite: 3)->assertCreated();
 
-        $this->assertSame(-1.0, (float) $this->variante->fresh()->stock);
+        // Jamais négatif : le stock s'arrête à 0, le pagne manquant est noté sur la ligne et signalé.
+        $this->assertSame(0.0, (float) $this->variante->fresh()->stock);
         $this->assertSame('stock', $r->json('anomalies.0.type'));
         $this->assertSame(1, (int) $r->json('anomalies.0.manque'));
+        $this->assertSame(1.0, (float) $r->json('lignes.0.manque_stock'));
+        $this->assertSame(-2.0, (float) Mouvement::where('vente_id', $r->json('id'))->sum('quantite')); // seuls 2 sont sortis
+
 
         // En ligne, la même vente reste refusée.
         Sanctum::actingAs($this->vendeur);
@@ -103,6 +107,11 @@ class CaisseHorsLigneTest extends TestCase
         $this->assertContains('Ventes hors ligne à vérifier', collect($this->getJson('/api/notifications')->json())->pluck('titre')->all());
         Sanctum::actingAs($this->vendeur);
         $this->assertNotContains('Ventes hors ligne à vérifier', collect($this->getJson('/api/notifications')->json())->pluck('titre')->all());
+
+        // Annulée, elle ne rend que ce qui est vraiment sorti du stock.
+        Sanctum::actingAs($this->admin);
+        $this->postJson('/api/ventes/'.$r->json('id').'/annuler', ['motif' => 'Erreur'])->assertOk();
+        $this->assertSame(2.0, (float) $this->variante->fresh()->stock);
     }
 
     public function test_les_promotions_sont_celles_du_jour_de_la_vente_et_un_ecart_est_signale(): void
@@ -133,6 +142,29 @@ class CaisseHorsLigneTest extends TestCase
         // Les points ne s'utilisent pas hors ligne (solde inconnu de la tablette).
         $client = Client::create(['tenant_id' => $this->admin->tenant_id, 'boutique_id' => $this->admin->boutique_id, 'nom' => 'Ama']);
         $this->venteHorsLigne(['client_id' => $client->id, 'points_utilises' => 100])->assertStatus(422);
+    }
+
+    public function test_deux_lignes_du_meme_coloris_se_partagent_le_manque(): void
+    {
+        Sanctum::actingAs($this->vendeur);
+        $r = $this->postJson('/api/ventes', [
+            'uuid' => (string) Str::uuid(), 'remise_type' => 'pct', 'remise_valeur' => 0, 'paiement' => ['mode' => 'especes'],
+            'lignes' => [
+                ['variante_id' => $this->variante->id, 'unite' => 'pagne', 'quantite' => 2],
+                ['variante_id' => $this->variante->id, 'unite' => 'pagne', 'quantite' => 2],
+            ],
+            'hors_ligne' => ['vendue_le' => now()->subHour()->toIso8601String(), 'total' => 40000],
+        ])->assertCreated();
+
+        // Stock 2 pour 4 vendus : la première ligne sort ses 2 pagnes, la seconde n'en trouve plus.
+        $this->assertSame([0.0, 2.0], array_map('floatval', array_column($r->json('lignes'), 'manque_stock')));
+        $this->assertSame(0.0, (float) $this->variante->fresh()->stock);
+    }
+
+    public function test_la_base_refuse_un_stock_negatif(): void
+    {
+        $this->expectException(\Illuminate\Database\QueryException::class);
+        Variante::whereKey($this->variante->id)->update(['stock' => -1]);
     }
 
     public function test_une_vente_hors_ligne_trop_ancienne_ou_datee_dans_le_futur(): void
